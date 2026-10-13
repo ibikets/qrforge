@@ -179,7 +179,7 @@ export default function SavedCodeList({ codes: initial, planName, max }: { codes
             <li key={c.id} className="flex flex-wrap items-center gap-5 bg-surface p-5 [content-visibility:auto] [contain-intrinsic-size:auto_104px]">
               <Thumb code={c} />
               <div className="min-w-0 flex-1 basis-60">
-                <h3 className="mb-1 break-words text-lg font-medium">{c.name}</h3>
+                <h2 className="mb-1 break-words text-lg font-medium">{c.name}</h2>
                 <p className="text-[13px] text-muted">
                   {typeLabel(c.type)} · Updated {fmt(c.updated_at)}
                 </p>

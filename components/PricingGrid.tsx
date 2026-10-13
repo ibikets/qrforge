@@ -74,7 +74,7 @@ export default function PricingGrid({ current, signedIn }: { current: PlanId; si
       </div>
 
       <h2 className="mb-4 text-2xl font-medium">Compare plans</h2>
-      <div className="mb-10 overflow-x-auto">
+      <div className="mb-10 overflow-x-auto" tabIndex={0} role="region" aria-label="Plan comparison table">
         <table className="w-full min-w-[520px] border-collapse text-left">
           <caption className="sr-only">Plan comparison</caption>
           <thead>
