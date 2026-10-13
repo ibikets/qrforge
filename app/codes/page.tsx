@@ -1,52 +1,56 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import SavedCard from "@/components/SavedCard";
-import type { SavedCode } from "@/components/Generator";
+import type { Metadata } from "next";
+import SavedCodeList, { type ListedCode } from "@/components/SavedCodeList";
+import RetryButton from "@/components/RetryButton";
+import { LinkButton } from "@/components/ui/Button";
 import { PLANS } from "@/lib/plans";
 import { getSession, supabaseServer } from "@/lib/supabase";
 
-export const metadata = { title: "My codes · QRForge" };
+export const metadata: Metadata = { title: "My codes" };
 
 async function List() {
   const { userId, plan } = await getSession();
   if (!userId) redirect("/login?next=/codes");
   const sb = await supabaseServer();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("qr_codes")
-    .select("id,name,type,fields,style")
-    .order("created_at", { ascending: false });
-  const codes = (data ?? []) as SavedCode[];
-  return (
-    <>
-      <p className="mt-1 text-sm text-neutral-600">
-        {codes.length} of {PLANS[plan].maxSaved} saved ({PLANS[plan].name} plan).
-      </p>
-      {codes.length === 0 ? (
-        <p className="mt-10 text-neutral-600">
-          Nothing saved yet.{" "}
-          <Link href="/" className="underline">
-            Create your first code
-          </Link>
-        </p>
-      ) : (
-        <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-          {codes.map((c) => (
-            <SavedCard key={c.id} code={c} />
-          ))}
-        </div>
-      )}
-    </>
-  );
+    .select("id,name,type,fields,style,created_at,updated_at")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    return (
+      <div role="alert" className="rounded-panel bg-surface p-8">
+        <h2 className="mb-2 text-2xl font-medium">We couldn’t load your saved codes</h2>
+        <p className="mb-6 text-muted">Try again. Your saved codes have not been deleted.</p>
+        <RetryButton />
+      </div>
+    );
+  }
+  return <SavedCodeList codes={(data ?? []) as ListedCode[]} planName={PLANS[plan].name} max={PLANS[plan].maxSaved} />;
 }
 
 export default function Codes() {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight">My saved codes</h1>
-      <Suspense fallback={<div className="mt-8 h-48 animate-pulse rounded-2xl bg-neutral-200" />}>
+    <div className="mx-auto max-w-[1280px] px-5 py-8 sm:px-10 sm:py-10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-3 text-[28px] font-semibold leading-tight tracking-[-0.9px] sm:text-[40px]">My codes</h1>
+          <p className="mb-6 text-lg text-muted">Your saved work, ready for the next handoff.</p>
+        </div>
+        <LinkButton href="/create">Create a code</LinkButton>
+      </div>
+      <Suspense
+        fallback={
+          <div aria-busy="true">
+            <p role="status" className="mb-4 text-muted">Loading your saved codes…</p>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="my-3 h-20 rounded-control bg-disabled" />
+            ))}
+          </div>
+        }
+      >
         <List />
       </Suspense>
-    </main>
+    </div>
   );
 }

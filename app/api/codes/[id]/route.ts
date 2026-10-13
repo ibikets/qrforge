@@ -6,7 +6,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   const sb = await supabaseServer();
   // RLS also restricts this to the owner's rows
-  const { error } = await sb.from("qr_codes").delete().eq("id", id).eq("user_id", userId);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  const { data, error } = await sb.from("qr_codes").delete().eq("id", id).eq("user_id", userId).select("id");
+  if (error) return Response.json({ error: "We couldn’t delete this code. Try again." }, { status: 500 });
+  if (!data || data.length === 0) return Response.json({ error: "That code no longer exists." }, { status: 404 });
   return Response.json({ ok: true });
 }
