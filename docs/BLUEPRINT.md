@@ -168,7 +168,7 @@ Download: client posts `{type, fields, style, format, size}`, server validates a
 
 ## 10. Environment variables (names only, never commit values)
 
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_SITE_URL`, `CRON_SECRET`. See `.env.example`.
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_SITE_URL`, `CRON_SECRET`.
 
 ## 11. File map
 
