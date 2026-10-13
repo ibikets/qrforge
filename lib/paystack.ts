@@ -15,64 +15,99 @@ export const paystackHeaders = () => ({
  * right amount, grant/extend the plan. Safe to call from both the webhook and the return page:
  * the payments.reference primary key guarantees a payment is applied exactly once.
  */
-export async function activateFromReference(reference: string): Promise<{ ok: boolean; plan?: PlanId }> {
-  const res = await fetch(`${API}/transaction/verify/${encodeURIComponent(reference)}`, {
-    headers: paystackHeaders(),
-    cache: "no-store",
-  });
-  const json = await res.json();
+export type Activation = {
+  ok: boolean;
+  /** confirmed: plan applied (now or earlier). pending: Paystack/our database not final yet, do not pay again. failed: Paystack says it did not succeed. */
+  state: "confirmed" | "pending" | "failed";
+  plan?: PlanId;
+  userId?: string;
+  /** actual paid-until timestamp read back from the subscription row */
+  periodEnd?: string;
+  /** true when a retry could succeed (network/database error): webhooks should answer non-2xx */
+  transient?: boolean;
+};
+
+const PENDING_STATES = new Set(["pending", "ongoing", "processing", "queued"]);
+
+export async function activateFromReference(reference: string): Promise<Activation> {
+  let json;
+  try {
+    const res = await fetch(`${API}/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: paystackHeaders(),
+      cache: "no-store",
+    });
+    json = await res.json();
+    if (!res.ok || !json.status) {
+      // Paystack unknown reference is a definite failure; anything else we cannot tell yet
+      return res.status === 404 ? { ok: false, state: "failed" } : { ok: false, state: "pending", transient: true };
+    }
+  } catch {
+    return { ok: false, state: "pending", transient: true };
+  }
   const tx = json?.data;
-  if (!res.ok || !json.status || tx?.status !== "success") return { ok: false };
+  if (PENDING_STATES.has(tx?.status)) return { ok: false, state: "pending" };
+  if (tx?.status !== "success") return { ok: false, state: "failed" };
 
   const userId: string | undefined = tx.metadata?.user_id;
   const plan = tx.metadata?.plan as PlanId | undefined;
-  if (!userId || !plan || !PAID_PLANS.includes(plan)) return { ok: false };
+  if (!userId || !plan || !PAID_PLANS.includes(plan)) return { ok: false, state: "failed" };
   // never trust metadata alone: the amount paid must match the plan price
-  if (tx.amount !== PLANS[plan].priceNgn * 100 || tx.currency !== "NGN") return { ok: false };
+  if (tx.amount !== PLANS[plan].priceNgn * 100 || tx.currency !== "NGN") return { ok: false, state: "failed" };
 
   const db = supabaseAdmin();
-
-  // Claim the reference first. A concurrent call loses here (duplicate key) and does nothing.
-  const { error: claimErr } = await db.from("payments").insert({
-    reference,
-    user_id: userId,
-    plan,
-    amount_kobo: tx.amount,
-    status: "success",
-  });
-  if (claimErr) return { ok: claimErr.code === "23505", plan };
-
-  const { data: current } = await db
-    .from("subscriptions")
-    .select("current_period_end")
-    .eq("user_id", userId)
-    .maybeSingle();
-  const base =
-    current && new Date(current.current_period_end) > new Date() ? new Date(current.current_period_end) : new Date();
-  base.setDate(base.getDate() + PERIOD_DAYS);
-
-  const row: Record<string, unknown> = {
-    user_id: userId,
-    plan,
-    current_period_end: base.toISOString(),
-    paystack_reference: reference,
-    failed_attempts: 0,
-    updated_at: new Date().toISOString(),
+  const periodEnd = async () => {
+    const { data } = await db.from("subscriptions").select("current_period_end").eq("user_id", userId).maybeSingle();
+    return data?.current_period_end as string | undefined;
   };
-  const auth = tx.authorization;
-  if (auth?.reusable && auth?.authorization_code) {
-    row.authorization_code = auth.authorization_code;
-    row.customer_email = tx.customer?.email;
-  }
-  // The renewal preference is only set by a person paying, never by an automatic renewal charge.
-  if (!tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean") row.auto_renew = tx.metadata.auto_renew;
 
-  const { error } = await db.from("subscriptions").upsert(row);
-  if (error) {
-    await db.from("payments").delete().eq("reference", reference); // let a retry apply it
-    return { ok: false };
+  try {
+    // Claim the reference first. A concurrent call loses here (duplicate key) and does nothing.
+    const { error: claimErr } = await db.from("payments").insert({
+      reference,
+      user_id: userId,
+      plan,
+      amount_kobo: tx.amount,
+      status: "success",
+    });
+    if (claimErr) {
+      if (claimErr.code === "23505") return { ok: true, state: "confirmed", plan, userId, periodEnd: await periodEnd() };
+      return { ok: false, state: "pending", transient: true };
+    }
+
+    const { data: current } = await db
+      .from("subscriptions")
+      .select("current_period_end")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const base =
+      current && new Date(current.current_period_end) > new Date() ? new Date(current.current_period_end) : new Date();
+    base.setDate(base.getDate() + PERIOD_DAYS);
+
+    const row: Record<string, unknown> = {
+      user_id: userId,
+      plan,
+      current_period_end: base.toISOString(),
+      paystack_reference: reference,
+      failed_attempts: 0,
+      updated_at: new Date().toISOString(),
+    };
+    const auth = tx.authorization;
+    if (auth?.reusable && auth?.authorization_code) {
+      row.authorization_code = auth.authorization_code;
+      row.customer_email = tx.customer?.email;
+    }
+    // The renewal preference is only set by a person paying, never by an automatic renewal charge.
+    if (!tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean") row.auto_renew = tx.metadata.auto_renew;
+
+    const { error } = await db.from("subscriptions").upsert(row);
+    if (error) {
+      await db.from("payments").delete().eq("reference", reference); // let a retry apply it
+      return { ok: false, state: "pending", transient: true };
+    }
+    return { ok: true, state: "confirmed", plan, userId, periodEnd: base.toISOString() };
+  } catch {
+    return { ok: false, state: "pending", transient: true };
   }
-  return { ok: true, plan };
 }
 
 /** Charge saved cards for subscriptions that expire within 24h. Called daily by the cron route. */

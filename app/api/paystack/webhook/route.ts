@@ -9,9 +9,16 @@ export async function POST(req: Request) {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return new Response("Invalid signature", { status: 401 });
 
-  const event = JSON.parse(raw);
+  let event;
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
   if (event.event === "charge.success" && event.data?.reference) {
-    await activateFromReference(event.data.reference);
+    const r = await activateFromReference(event.data.reference);
+    // Non-2xx on a retryable failure makes Paystack redeliver the event.
+    if (r.transient) return new Response("retry", { status: 503 });
   }
   return new Response("ok");
 }

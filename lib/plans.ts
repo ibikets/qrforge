@@ -47,8 +47,7 @@ export const PLANS: Record<
     name: "Business",
     priceNgn: 9500,
     blurb: "For agencies and heavy use",
-    features: ["Everything in Pro", "Up to 4096px print-ready files",
-      "Save up to 1,000 codes", "Priority support"],
+    features: ["Everything in Pro", "Up to 4096px print-ready files", "Save up to 1,000 codes"],
     types: "all",
     formats: ["png", "svg", "pdf"],
     logo: true,
@@ -61,3 +60,5 @@ export const PAID_PLANS: PlanId[] = ["pro", "business"];
 
 /** Naira display, e.g. 3500 -> "₦3,500" (fixed locale so server and browser agree). */
 export const formatNaira = (n: number) => `₦${n.toLocaleString("en-US")}`;
+
+export const PLAN_RANK: Record<PlanId, number> = { free: 0, pro: 1, business: 2 };

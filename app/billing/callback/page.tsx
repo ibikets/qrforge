@@ -1,33 +1,72 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
-import Link from "next/link";
+import ReturnToDraft from "@/components/ReturnToDraft";
+import RetryButton from "@/components/RetryButton";
+import { LinkButton } from "@/components/ui/Button";
 import { activateFromReference } from "@/lib/paystack";
 import { PLANS } from "@/lib/plans";
+import { getSession } from "@/lib/supabase";
+
+export const metadata: Metadata = { title: "Payment" };
+const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
 async function Result({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
-  const ref = typeof sp.reference === "string" ? sp.reference : "";
-  const result = ref ? await activateFromReference(ref) : { ok: false as const, plan: undefined };
+  const ref = typeof sp.reference === "string" ? sp.reference : typeof sp.trxref === "string" ? sp.trxref : "";
+  const r = ref ? await activateFromReference(ref) : null;
+  const { userId } = await getSession();
+
+  if (r?.state === "confirmed" && r.plan) {
+    // The actual expiry is shown only to the person who paid.
+    const mine = r.userId && r.userId === userId;
+    return (
+      <>
+        <h1 className="mb-3 text-[28px] font-semibold sm:text-[32px]">Payment received</h1>
+        <p className="mb-8 text-muted">
+          {mine && r.periodEnd ? `Your ${PLANS[r.plan].name} plan is active until ${fmt(r.periodEnd)}.` : `Your ${PLANS[r.plan].name} plan is active.`}
+        </p>
+        <div className="flex flex-wrap justify-center gap-3">
+          <ReturnToDraft />
+          <LinkButton variant="secondary" href="/create">Create a code</LinkButton>
+          <LinkButton variant="ghost" href="/billing">View billing</LinkButton>
+        </div>
+      </>
+    );
+  }
+  if (!r || r.state === "failed") {
+    return (
+      <>
+        <h1 className="mb-3 text-[28px] font-semibold sm:text-[32px]">We couldn’t confirm your payment</h1>
+        <p className="mb-4 text-muted">
+          If you were charged, keep your Paystack receipt and reference, and don’t pay again until the status is clear.
+        </p>
+        {ref ? <p className="mb-6 break-all text-sm text-muted">Reference: {ref}</p> : null}
+        <div className="flex flex-wrap justify-center gap-3">
+          {ref ? <RetryButton label="Check again" /> : null}
+          <LinkButton variant="ghost" href="/billing">View billing</LinkButton>
+        </div>
+      </>
+    );
+  }
   return (
     <>
-      <h1 className="text-2xl font-semibold">{result.ok ? "Payment received" : "We couldn't confirm your payment"}</h1>
-      <p className="mt-3 text-neutral-600">
-        {result.ok && result.plan
-          ? `Your ${PLANS[result.plan].name} plan is active for 30 days.`
-          : "If you were charged, your plan will activate within a few minutes. Contact support with your Paystack receipt if not."}
-      </p>
+      <h1 className="mb-3 text-[28px] font-semibold sm:text-[32px]">We’re confirming your payment</h1>
+      <p className="mb-4 text-muted">If you were charged, do not pay again. Check your plan shortly.</p>
+      <p className="mb-6 break-all text-sm text-muted">Reference: {ref}</p>
+      <div className="flex flex-wrap justify-center gap-3">
+        <RetryButton label="Check again" />
+        <LinkButton variant="ghost" href="/billing">View billing</LinkButton>
+      </div>
     </>
   );
 }
 
 export default function Callback(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   return (
-    <main className="mx-auto max-w-md px-6 py-24 text-center">
-      <Suspense fallback={<p className="text-neutral-600">Confirming your payment…</p>}>
+    <div className="mx-auto max-w-[520px] px-5 py-16 text-center sm:py-24">
+      <Suspense fallback={<h1 role="status" className="text-[28px] font-semibold">Verifying your payment…</h1>}>
         <Result searchParams={props.searchParams} />
       </Suspense>
-      <Link href="/" className="mt-8 inline-block rounded-lg bg-neutral-900 px-5 py-2.5 text-white">
-        Back to the generator
-      </Link>
-    </main>
+    </div>
   );
 }

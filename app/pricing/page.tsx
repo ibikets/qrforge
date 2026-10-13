@@ -1,8 +1,9 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getSession } from "@/lib/supabase";
 import PricingGrid from "@/components/PricingGrid";
 
-export const metadata = { title: "Pricing · QRForge" };
+export const metadata: Metadata = { title: "Pricing" };
 
 async function Plans() {
   const { plan: current, email } = await getSession();
@@ -11,12 +12,15 @@ async function Plans() {
 
 export default function Pricing() {
   return (
-    <main className="mx-auto max-w-5xl px-6 py-14">
-      <h1 className="text-center text-3xl font-semibold tracking-tight">Simple pricing</h1>
-      <p className="mt-2 text-center text-neutral-600">Pay in Naira with card, bank transfer or USSD via Paystack.</p>
-      <Suspense fallback={<div className="mt-10 h-80 animate-pulse rounded-2xl bg-neutral-200" />}>
+    <div className="mx-auto max-w-[1100px] px-5 py-8 sm:px-10 sm:py-12">
+      <h1 className="mb-3 text-[28px] font-semibold leading-tight tracking-[-0.9px] sm:text-[40px]">Clear pricing. Pay in Naira.</h1>
+      <p className="max-w-[640px] text-lg text-muted">Choose a 30-day pass. Auto-renewal is optional.</p>
+      <p className="mt-2 max-w-[640px] text-sm text-muted">
+        Payments go through Paystack. The payment methods you see at checkout are the ones enabled for this store.
+      </p>
+      <Suspense fallback={<div className="mt-10 h-80 rounded-panel bg-disabled" aria-busy="true" />}>
         <Plans />
       </Suspense>
-    </main>
+    </div>
   );
 }

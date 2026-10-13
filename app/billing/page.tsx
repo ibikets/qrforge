@@ -1,72 +1,103 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import AutoRenewToggle from "@/components/AutoRenewToggle";
-import { PLANS, type PlanId } from "@/lib/plans";
-import { getSession, supabaseServer } from "@/lib/supabase";
+import RetryButton from "@/components/RetryButton";
+import { LinkButton } from "@/components/ui/Button";
+import { PLANS, formatNaira, type PlanId } from "@/lib/plans";
+import { getSession, supabaseAdmin, supabaseServer } from "@/lib/supabase";
 
-export const metadata = { title: "Billing · QRForge" };
+export const metadata: Metadata = { title: "Billing" };
 
-const fmt = (d: string) => new Date(d).toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" });
+const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
 async function Details() {
-  const { userId, plan } = await getSession();
-  if (!userId) redirect("/login?next=/billing");
+  const { userId } = await getSession();
+  if (!userId) redirect("/login?next=%2Fbilling");
   const sb = await supabaseServer();
-  const { data: sub } = await sb.from("subscriptions").select("plan, current_period_end, auto_renew").maybeSingle();
-  const { data: pays } = await sb
-    .from("payments")
-    .select("reference, plan, amount_kobo, created_at")
-    .order("created_at", { ascending: false })
-    .limit(10);
-
+  const [subRes, payRes] = await Promise.all([
+    sb.from("subscriptions").select("plan, current_period_end, auto_renew").maybeSingle(),
+    sb.from("payments").select("reference, plan, amount_kobo, created_at").order("created_at", { ascending: false }).limit(10),
+  ]);
+  if (subRes.error) {
+    return (
+      <div role="alert" className="rounded-panel bg-surface p-8">
+        <h2 className="mb-2 text-2xl font-medium">We couldn’t load your billing details</h2>
+        <p className="mb-6 text-muted">Try again. Nothing about your plan has changed.</p>
+        <RetryButton />
+      </div>
+    );
+  }
+  const sub = subRes.data;
   const active = sub && new Date(sub.current_period_end) > new Date();
+  // Only a boolean is derived; authorisation data stays server-side.
+  let hasCard = false;
+  if (sub && active) {
+    const { data } = await supabaseAdmin().from("subscriptions").select("authorization_code").eq("user_id", userId).maybeSingle();
+    hasCard = Boolean(data?.authorization_code);
+  }
+  const plan = sub?.plan as PlanId | undefined;
+
   return (
     <>
-      <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
-        <p className="text-sm text-neutral-500">Current plan</p>
-        <p className="text-2xl font-semibold">{PLANS[plan].name}</p>
-        {active ? (
+      <section aria-labelledby="plan-h" className="rounded-panel bg-surface p-6">
+        <p className="text-sm text-muted">Current plan</p>
+        <h2 id="plan-h" className="text-2xl font-semibold">
+          {active && plan ? PLANS[plan].name : "Free"}
+        </h2>
+        {active && sub && plan ? (
           <>
-            <p className="mt-2 text-sm text-neutral-600">
-              {sub.auto_renew
-                ? `Renews automatically on ${fmt(sub.current_period_end)} at ₦${PLANS[sub.plan as PlanId].priceNgn.toLocaleString()}.`
-                : `Active until ${fmt(sub.current_period_end)}. Auto-renewal is off, so it will not be charged again.`}
+            <p className="mt-3">
+              {sub.auto_renew && hasCard
+                ? `Renews automatically on ${fmt(sub.current_period_end)} at ${formatNaira(PLANS[plan].priceNgn)}.`
+                : `Active until ${fmt(sub.current_period_end)}. Auto-renewal is off.`}
             </p>
-            <div className="mt-4 flex items-center gap-3">
-              <AutoRenewToggle enabled={sub.auto_renew} />
-              <Link href="/pricing" className="text-sm underline">
+            {sub.auto_renew && !hasCard ? (
+              <p className="mt-2 text-sm text-warning">
+                Auto-renewal is switched on, but no reusable card is saved, so it can’t renew automatically. Pay by card to save one.
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap items-start gap-4">
+              <AutoRenewToggle enabled={Boolean(sub.auto_renew && hasCard)} canEnable={hasCard} />
+              <LinkButton variant="ghost" href="/pricing">
                 Change plan
-              </Link>
+              </LinkButton>
             </div>
-            <p className="mt-3 text-xs text-neutral-500">
-              Auto-renewal charges the card you paid with. Pay by card (not transfer or USSD) when upgrading so it can be saved.
-            </p>
+            <p className="mt-4 text-[13px] text-muted">Auto-renewal charges the card you paid with. Pay by card when choosing a plan so it can be saved.</p>
           </>
         ) : (
-          <p className="mt-2 text-sm text-neutral-600">
-            You are on the free plan.{" "}
-            <Link href="/pricing" className="underline">
-              See plans
-            </Link>
-          </p>
+          <>
+            <p className="mt-3 text-muted">
+              {sub
+                ? `Your ${PLANS[plan as PlanId]?.name ?? "paid"} plan ended on ${fmt(sub.current_period_end)}. You’re on Free. Your saved codes are still here; Free limits apply to new saves and downloads. Codes you already printed are not affected.`
+                : "You’re on the Free plan."}
+            </p>
+            <div className="mt-5">
+              <LinkButton href="/pricing">See plans</LinkButton>
+            </div>
+          </>
         )}
-      </div>
+      </section>
 
-      <h2 className="mt-8 text-lg font-semibold">Payment history</h2>
-      {pays && pays.length > 0 ? (
-        <ul className="mt-3 divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white">
-          {pays.map((p) => (
-            <li key={p.reference} className="flex justify-between px-5 py-3 text-sm">
+      <h2 className="mb-2 mt-10 text-2xl font-medium">Payment history</h2>
+      {payRes.error ? (
+        <div role="alert" className="mt-3">
+          <p className="mb-3 text-muted">We couldn’t load your payment history.</p>
+          <RetryButton />
+        </div>
+      ) : payRes.data && payRes.data.length > 0 ? (
+        <ul className="list-none p-0">
+          {payRes.data.map((p) => (
+            <li key={p.reference} className="flex justify-between gap-4 border-b border-divider py-4">
               <span>
                 {PLANS[p.plan as PlanId]?.name ?? p.plan} · {fmt(p.created_at)}
               </span>
-              <span>₦{(p.amount_kobo / 100).toLocaleString()}</span>
+              <span>{formatNaira(p.amount_kobo / 100)}</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-neutral-600">No payments yet.</p>
+        <p className="mt-3 text-muted">No payments yet.</p>
       )}
     </>
   );
@@ -74,11 +105,12 @@ async function Details() {
 
 export default function Billing() {
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight">Billing</h1>
-      <Suspense fallback={<div className="mt-6 h-40 animate-pulse rounded-2xl bg-neutral-200" />}>
+    <div className="mx-auto max-w-[760px] px-5 py-8 sm:px-10 sm:py-10 min-[1000px]:mx-0">
+      <h1 className="mb-3 text-[28px] font-semibold leading-tight tracking-[-0.9px] sm:text-[40px]">Billing</h1>
+      <p className="mb-8 text-lg text-muted">Your plan, renewal preference and payment history.</p>
+      <Suspense fallback={<div className="h-40 rounded-panel bg-disabled" aria-busy="true" />}>
         <Details />
       </Suspense>
-    </main>
+    </div>
   );
 }
