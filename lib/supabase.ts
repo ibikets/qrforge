@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import type { PlanId } from "./plans";
 
 export const supabaseConfigured = Boolean(
@@ -9,6 +10,8 @@ export const supabaseConfigured = Boolean(
 
 /** Server client bound to the request's cookies (server components, route handlers) */
 export async function supabaseServer() {
+  // Session work reads the clock (token expiry). Opt out of prerender/prefetch rendering explicitly.
+  await connection();
   const store = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

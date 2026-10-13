@@ -23,6 +23,8 @@ export default function Dialog({
     if (open && !d.open) {
       opener.current = document.activeElement;
       d.showModal();
+      // React's autoFocus runs before the dialog is shown, so focus the marked safe action explicitly
+      d.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     } else if (!open && d.open) {
       d.close();
     }

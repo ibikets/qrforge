@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PLANS, PAID_PLANS, PLAN_RANK, type PlanId } from "@/lib/plans";
 import { getSession, supabaseServer } from "@/lib/supabase";
-import { paystackHeaders } from "@/lib/paystack";
+import { PAYSTACK_API, paystackHeaders } from "@/lib/paystack";
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   let res: Response;
   let json;
   try {
-    res = await fetch("https://api.paystack.co/transaction/initialize", {
+    res = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
       method: "POST",
       headers: paystackHeaders(),
       body: JSON.stringify({

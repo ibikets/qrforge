@@ -217,7 +217,7 @@ export default function SavedCodeList({ codes: initial, planName, max }: { codes
           <Button variant="danger" onClick={remove} disabled={pending}>
             {pending ? "Deleting…" : err ? "Try again" : "Delete code"}
           </Button>
-          <Button variant="secondary" autoFocus onClick={() => setTarget(null)} disabled={pending}>
+          <Button variant="secondary" data-autofocus onClick={() => setTarget(null)} disabled={pending}>
             Keep code
           </Button>
         </div>

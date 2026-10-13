@@ -1,7 +1,9 @@
 import { PLANS, PAID_PLANS, type PlanId } from "./plans";
 import { supabaseAdmin } from "./supabase";
 
-const API = "https://api.paystack.co";
+// overridable only so the integration can be exercised against a local stand-in in tests
+export const PAYSTACK_API = process.env.PAYSTACK_API_URL ?? "https://api.paystack.co";
+const API = PAYSTACK_API;
 const PERIOD_DAYS = 30;
 const MAX_FAILURES = 3;
 
