@@ -1,26 +1,93 @@
 @import "tailwindcss";
 
+/* QRFORGE Working Desk / Forest tokens (light mode only; no automatic dark override). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --qrf-canvas: #f8f7f3;
+  --qrf-surface: #ffffff;
+  --qrf-soft: #eaf2ec;
+  --qrf-ink: #202923;
+  --qrf-muted: #56635b;
+  --qrf-border: #7e8d82;
+  --qrf-divider: #d7ded8;
+  --qrf-primary: #176b4f;
+  --qrf-hover: #12563f;
+  --qrf-danger: #a52c35;
+  --qrf-warning: #805500;
+  --qrf-warning-bg: #f4ead0;
+  --qrf-disabled: #e3e7e3;
+  --qrf-font: var(--font-plex), "IBM Plex Sans", Arial, sans-serif;
+  --qrf-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--qrf-canvas);
+  --color-surface: var(--qrf-surface);
+  --color-soft: var(--qrf-soft);
+  --color-ink: var(--qrf-ink);
+  --color-muted: var(--qrf-muted);
+  --color-control-border: var(--qrf-border);
+  --color-divider: var(--qrf-divider);
+  --color-brand: var(--qrf-primary);
+  --color-brand-hover: var(--qrf-hover);
+  --color-danger: var(--qrf-danger);
+  --color-warning: var(--qrf-warning);
+  --color-warning-bg: var(--qrf-warning-bg);
+  --color-disabled: var(--qrf-disabled);
+  --font-sans: var(--qrf-font);
+  --radius-control: 0.375rem;
+  --radius-panel: 0.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html {
+  color-scheme: light;
+}
+body {
+  background: var(--qrf-canvas);
+  color: var(--qrf-ink);
+  font-family: var(--qrf-font);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--qrf-primary);
+  outline-offset: 3px;
+}
+
+/* Authenticated desktop rail: content shifts only when the rail is rendered. */
+@media (min-width: 1000px) {
+  body:has([data-rail]) .shell-main {
+    margin-left: 216px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+dialog {
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--qrf-surface);
+  color: var(--qrf-ink);
+  padding: 28px;
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  margin: auto;
+  box-shadow: 0 16px 48px #14281c29;
+}
+dialog::backdrop {
+  background: #14201980;
+}
+
+input[type="range"],
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--qrf-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
 }
