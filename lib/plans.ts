@@ -58,3 +58,6 @@ export const PLANS: Record<
 };
 
 export const PAID_PLANS: PlanId[] = ["pro", "business"];
+
+/** Naira display, e.g. 3500 -> "₦3,500" (fixed locale so server and browser agree). */
+export const formatNaira = (n: number) => `₦${n.toLocaleString("en-US")}`;

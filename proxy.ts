@@ -3,6 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Refreshes the Supabase session cookie on every page request so logins persist.
 export async function proxy(request: NextRequest) {
+  // Legacy saved-code links: /?load=<id> now lives at /create?load=<id> (real HTTP redirect, keeps / static).
+  const { pathname, searchParams } = request.nextUrl;
+  if (pathname === "/" && searchParams.has("load")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/create";
+    return NextResponse.redirect(url, 308);
+  }
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return NextResponse.next();
 
   let response = NextResponse.next({ request });

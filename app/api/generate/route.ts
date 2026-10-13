@@ -1,12 +1,14 @@
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 import { PLANS } from "@/lib/plans";
-import { QR_TYPES, buildPayload, type Fields, type QrType } from "@/lib/qr";
+import { QR_TYPES, type QrType } from "@/lib/qr";
+import { safeFileBase, validateContent } from "@/lib/qr-validation";
 import { renderSvg, sanitizeStyle } from "@/lib/qr-render";
 import { getSession } from "@/lib/supabase";
 
 
-const err = (message: string, status: number) => Response.json({ error: message, upgrade: status === 403 }, { status });
+const err = (message: string, status: number, field?: string) =>
+  Response.json({ error: message, upgrade: status === 403, field }, { status });
 
 /**
  * The ONLY way to obtain a downloadable file. Plan limits are enforced here, against the
@@ -14,7 +16,7 @@ const err = (message: string, status: number) => Response.json({ error: message,
  */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-  if (!body) return err("Bad request", 400);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return err("Bad request", 400);
 
   const { plan } = await getSession();
   const caps = PLANS[plan];
@@ -35,11 +37,11 @@ export async function POST(req: Request) {
   const style = sanitizeStyle(body.style);
   const wantedLogo = typeof body.style?.logo === "string" && body.style.logo.length > 0;
   if (wantedLogo && !caps.logo) return err("Adding a logo needs a Pro plan.", 403);
-  if (wantedLogo && !style.logo) return err("Logo must be a PNG, JPEG or WebP under ~100KB.", 400);
+  if (wantedLogo && !style.logo) return err("We couldn’t use that logo. Use a PNG, JPEG or WebP that fits the size limit.", 400);
 
-  const fields: Fields = body.fields && typeof body.fields === "object" ? body.fields : {};
-  const payload = buildPayload(type, fields);
-  if (!payload) return err("Fill in the details first.", 400);
+  const v = validateContent(type, body.fields);
+  if (!v.ok) return err(v.errors[v.first], 400, v.first);
+  const payload = v.payload;
 
   let svg: string;
   try {
@@ -48,15 +50,21 @@ export async function POST(req: Request) {
     return err("That is too much data for one QR code.", 400);
   }
 
+  const base = safeFileBase(body.name);
   const headers = (type: string, ext: string) => ({
     "Content-Type": type,
-    "Content-Disposition": `attachment; filename="qrcode.${ext}"`,
+    "Content-Disposition": `attachment; filename="${base}.${ext}"`,
     "Cache-Control": "no-store",
   });
 
   if (format === "svg") return new Response(svg, { headers: headers("image/svg+xml", "svg") });
 
-  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  let png: Buffer;
+  try {
+    png = await sharp(Buffer.from(svg)).png().toBuffer();
+  } catch {
+    return err("We couldn’t prepare that file. Try again.", 500);
+  }
   if (format === "png") return new Response(new Uint8Array(png), { headers: headers("image/png", "png") });
 
   const pdf = await PDFDocument.create();
