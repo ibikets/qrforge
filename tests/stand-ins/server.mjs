@@ -21,7 +21,7 @@ function filterRows(rows, params) {
     const m = /^(eq|neq|gt|gte|lt|lte|is|in)\.(.*)$/.exec(v);
     if (!m) continue;
     const [, op, val] = m;
-    out = out.filter((r) => op === "eq" ? String(r[k]) === val : op === "is" ? (val === "null" ? r[k] == null : String(r[k]) === val) : true);
+    out = out.filter((r) => op === "eq" ? String(r[k]) === val : op === "neq" ? String(r[k]) !== val : op === "in" ? val.replace(/^\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(r[k])) : op === "is" ? (val === "null" ? r[k] == null : String(r[k]) === val) : true);
   }
   const ord = params.get("order");
   if (ord) { const [col, dir] = ord.split("."); out = [...out].sort((a, b) => (a[col] > b[col] ? 1 : -1) * (dir === "desc" ? -1 : 1)); }
@@ -98,6 +98,23 @@ http.createServer(async (req, res) => {
     if (cur) Object.assign(cur, row); else state.subscriptions.push(row);
     return json(res, 200, base.toISOString());
   }
+  if (u.pathname === "/rest/v1/rpc/publish_page" && req.method === "POST") {
+    // Mirrors qrforge.publish_page (the real function is tested on a real Postgres engine in tests/db/pages.test.mjs).
+    const a = await body(req); state.log.push({ op: "rpc", fn: "publish_page", args: { p_page: a.p_page, p_expected: a.p_expected } });
+    const err = (code, message) => json(res, 400, { code, message });
+    const pages = (state.tables.pages ??= []); const revs = (state.tables.page_revisions ??= []);
+    const pg = pages.find((x) => x.id === a.p_page && x.user_id === a.p_user);
+    if (!pg) return err("QF020", "page not found");
+    if (["deleted", "archived"].includes(pg.lifecycle)) return err("QF021", "cannot publish");
+    if (pg.taken_down_at) return err("QF022", "disabled");
+    if (pg.draft_version !== a.p_expected) return err("QF023", "draft changed");
+    const sub = state.subscriptions.find((x) => x.user_id === a.p_user && new Date(x.current_period_end) > new Date());
+    if (!sub) return err("QF024", "plan");
+    const next = Math.max(0, ...revs.filter((r) => r.page_id === pg.id).map((r) => r.version)) + 1;
+    revs.push({ page_id: pg.id, version: next, content: a.p_content, published_by: a.p_user, published_at: new Date().toISOString() });
+    Object.assign(pg, { published_version: next, lifecycle: "published", published_at: new Date().toISOString() });
+    return json(res, 200, next);
+  }
   const rp = /^\/rest\/v1\/rpc\/(\w+)$/.exec(u.pathname);
   if (rp && req.method === "POST") {
     const a = await body(req); state.log.push({ op: "rpc", fn: rp[1], args: a });
@@ -126,11 +143,19 @@ http.createServer(async (req, res) => {
   // RLS stand-in: everything belongs to the single test user
   if (req.method === "GET" || req.method === "HEAD") return send(filterRows(T(), u.searchParams));
   if (req.method === "POST") {
-    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" } }; // column defaults the real database applies
+    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" }, pages: { lifecycle: "draft", draft_version: 1, published_version: null, taken_down_at: null, published_at: null, deleted_at: null } }; // column defaults the real database applies
     const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ ...(DEFAULTS[table] ?? {}), id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
     if (generic) { state.log.push({ op: "insert", table, rows }); }
     if (table === "payments" && rows.some((r) => state.payments.some((p) => p.reference === r.reference))) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
     if (table === "subscriptions") { /* upsert */ for (const r of rows) { const i = state.subscriptions.findIndex((x) => x.user_id === r.user_id); if (i >= 0) { Object.assign(state.subscriptions[i], r); } else state.subscriptions.push(r); } return send(rows, 201); }
+    if (table === "pages") {
+      for (const r of rows) {
+        if (state.tables.pages.some((x) => x.public_id === r.public_id)) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
+        const sub = state.subscriptions.find((x) => x.user_id === r.user_id && new Date(x.current_period_end) > new Date());
+        const max = sub?.plan === "business" ? 25 : sub ? 5 : 0;
+        if (state.tables.pages.filter((x) => x.user_id === r.user_id && x.lifecycle !== "deleted").length >= max) return json(res, 400, { code: "QF010", message: "hosted page limit reached" });
+      }
+    }
     if (table === "qr_codes" && state.dbLimit != null && state.qr_codes.length >= state.dbLimit) return json(res, 400, { code: "QF001", message: "saved-code limit reached for plan free" });
     if (table === "qr_codes") { state.log.push({ op: "insert", n: state.qr_codes.length }); }
     T().push(...rows); return send(rows, 201);

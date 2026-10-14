@@ -7,12 +7,13 @@ import AccountMenu, { AccountRows } from "@/components/AccountMenu";
 import Logo from "@/components/Logo";
 import IdleSignOut from "@/components/IdleSignOut";
 
-const WORKSPACE = ["/create", "/codes", "/billing", "/account"];
+const WORKSPACE = ["/create", "/codes", "/workspace", "/billing", "/account"];
 
 type Item = { href: string; label: string };
 const authed: Item[] = [
   { href: "/create", label: "Create" },
   { href: "/codes", label: "My codes" },
+  { href: "/workspace/pages", label: "Pages" },
   { href: "/billing", label: "Billing" },
   { href: "/account", label: "Account" },
 ];
@@ -45,7 +46,7 @@ export default function NavShell({
   const active = (h: string) => path === h || path.startsWith(h + "/");
 
   // The management area renders its own shell.
-  if (path.startsWith("/admin")) return null;
+  if (path.startsWith("/admin") || path.startsWith("/p/")) return null;
 
   if (rail) {
     return (

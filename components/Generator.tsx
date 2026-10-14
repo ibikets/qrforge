@@ -14,6 +14,7 @@ import { Notice } from "@/components/ui/Notice";
 import Dialog from "@/components/ui/Dialog";
 import ContentPanel from "@/components/create/ContentPanel";
 import AppearancePanel, { type Dots } from "@/components/create/AppearancePanel";
+import { vcfWithPhoto } from "@/lib/vcf";
 import ExportPanel, { type DlState, type Format } from "@/components/create/ExportPanel";
 
 export type SavedCode = {
@@ -245,6 +246,20 @@ export default function Generator({
     }
   }
 
+  const [vcfMsg, setVcfMsg] = useState("");
+  function downloadContact() {
+    if (caps.types === "basic") return setGate({ title: "Contact codes need Pro", body: "Contact (vCard) codes and files are part of Pro." });
+    if (!v.ok) { setAttempted(true); setVcfMsg(""); return focusField(v.first); }
+    const blob = new Blob([vcfWithPhoto(v.payload, fields.photo ?? null)], { type: "text/vcard;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeFileBase(name)}.vcf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    setVcfMsg(fields.photo ? "Contact file with photo is ready." : "Contact file is ready.");
+  }
+
   async function save() {
     if (busyRef.current) return;
     setSaveMsg(null);
@@ -455,6 +470,7 @@ export default function Generator({
           setGate({ title: `Download ${format.toUpperCase()} with Pro`, body: `Get SVG, PDF and logo customisation for ${formatNaira(pro.priceNgn)} per 30 days.`, after: () => setFormat("png") })
         }
         planName={caps.name}
+        contact={type === "vcard" ? { hasPhoto: Boolean(fields.photo), onDownload: downloadContact, state: vcfMsg } : undefined}
       />
 
       <Dialog open={gate !== null} onClose={() => setGate(null)} title={gate?.title ?? ""}>

@@ -1,3 +1,4 @@
+import { isPhotoB64 } from "@/lib/vcf";
 import QRCode from "qrcode";
 import { allowedKeys, buildPayload, type Fields, type QrType } from "@/lib/qr";
 import { GROUPS, GROUP_KEYS, dedupeKey, rowsOf, socialError, type ContactGroup } from "@/lib/qr-contact";
@@ -58,7 +59,7 @@ export function validateContent(type: QrType, input: unknown): Validation {
       errors[k] = "Invalid value.";
       continue;
     }
-    if (v.length > MAX_FIELD) errors[k] = "This is too long.";
+    if (k !== "photo" && v.length > MAX_FIELD) errors[k] = "This is too long.";
     f[k] = v;
   }
   const multiline = new Set(["text", "body", "message"]);
@@ -112,6 +113,7 @@ export function validateContent(type: QrType, input: unknown): Validation {
     case "vcard": {
       const known = allowedKeys("vcard");
       for (const k of Object.keys(f)) if (!known.has(k)) errors[k] = "Invalid value.";
+      if (f.photo && !isPhotoB64(f.photo)) errors.photo = "That photo could not be used. Choose it again.";
       if (!get("firstName") && !get("lastName")) errors.firstName = "Enter at least a first or last name.";
       for (const k of ["firstName", "lastName", "org", "title"]) if (/[;]/.test(f[k] ?? "")) errors[k] = "Remove semicolons.";
       for (const g of GROUP_KEYS) {

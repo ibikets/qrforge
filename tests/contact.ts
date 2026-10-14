@@ -1,5 +1,6 @@
 // Repeatable contact fields: helpers, shared validation, vCard encoding, QR round trip.
 // Run: npx tsx tests/contact.ts   (optionally VCARD_OUT=<dir> to also write decoded vCards for an independent parser)
+import { vEsc } from "../lib/qr-contact";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import fs from "node:fs";
@@ -116,4 +117,22 @@ for (const [name, rec] of [["legacy", legacy], ["multi", multi], ["realistic", r
 
 // 9. a plain URL code keeps exactly one destination
 ok(buildPayload("url", { url: "example.com, other.example.org" }) === "https://example.com, other.example.org" && !validateContent("url", { url: "example.com, other.example.org" }).ok, "URL codes are not concatenated: a second address in the field is refused");
+
+// 10. photo for the downloadable contact file; the QR payload never carries it
+import { vcfWithPhoto, fold, isPhotoB64, MAX_PHOTO_B64 } from "../lib/vcf";
+{
+  const jpeg = "/9j/" + "A".repeat(6000);
+  const base = { firstName: "Ada", lastName: "Obi", org: "Acme", phone: "+2348000000000" } as Record<string, string>;
+  ok(buildPayload("vcard", { ...base, photo: jpeg }) === buildPayload("vcard", base), "photo field never changes the QR payload");
+  ok(val({ ...base, photo: jpeg }).ok, "a contact with a photo still validates");
+  ok(!val({ ...base, photo: "AAAA" }).ok && !val({ ...base, photo: "/9j/" + "A".repeat(MAX_PHOTO_B64) }).ok && !val({ ...base, photo: "/9j/<script>" }).ok, "non-JPEG, oversize and malformed photo values are rejected");
+  const file = vcfWithPhoto(buildPayload("vcard", base), jpeg);
+  ok(file.startsWith("BEGIN:VCARD\r\nVERSION:3.0\r\n") && file.endsWith("END:VCARD\r\n"), "contact file uses CRLF line endings");
+  ok(file.split("\r\n").every((l) => new TextEncoder().encode(l).length <= 75), "every line of the file is folded to 75 octets");
+  ok(file.replace(/\r\n /g, "").includes("PHOTO;ENCODING=b;TYPE=JPEG:" + jpeg), "unfolding restores the exact photo bytes");
+  ok(!vcfWithPhoto(buildPayload("vcard", base), null).includes("PHOTO"), "no photo, no PHOTO property");
+  ok(isPhotoB64(jpeg) && !isPhotoB64(""), "photo validator");
+  ok(fold("X".repeat(200)).split("\r\n").every((l, i) => (i === 0 ? l.length === 75 : l.length <= 75 && l.startsWith(" "))), "fold splits long lines with a leading space");
+  ok(vEsc("a;b,c\\d\ne") === "a\\;b\\,c\\\\d\\ne", "vCard text escaping covers semicolon, comma, backslash and newline");
+}
 process.exit(bad ? 1 : 0);

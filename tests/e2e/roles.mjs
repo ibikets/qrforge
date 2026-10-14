@@ -12,15 +12,16 @@ const A = {
   staff: { invite: "st", revoke_invite: "st", change_role: "st", revoke: "st", restore: "st" },
   jobs: { preview: "rel", run: "rel", promote: "rel", rollback: "rel" },
   settings: { set: "set", clear: "set" },
+  pages: { takedown: "pt", restore: "pt" },
   support: { create_ticket: "sup", add_message: "sup", update: "sup", send_reply: "sup" },
 };
 const CAPSET = {
-  owner: "cu cs cr ea pd pp cp rr rd cd cpub media st rel set sup pr",
-  support: "cu cs cr sup",
+  owner: "cu cs cr ea pd pp cp rr rd cd cpub media st rel set sup pr pt",
+  support: "cu cs cr sup pt",
   billing: "ea pd rr pr",
   content_editor: "cd media",
 };
-const STEP = new Set(["st", "rd", "rel", "pp", "cp", "cpub", "cs", "set"]);
+const STEP = new Set(["st", "rd", "rel", "pp", "cp", "cpub", "cs", "set", "pt"]);
 const roles = { owner: 1, support: 2, billing: 3, content_editor: 4 };
 await ctl({ reset: true });
 const staff = Object.entries(roles).map(([role, n]) => ({ user_id: ID(n), email: `${role}@example.com`, role, extra_grants: [], state: "active", version: 1 }));
