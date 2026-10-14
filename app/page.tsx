@@ -9,6 +9,7 @@ import Workbench from "@/components/landing/Workbench";
 import { getLanding } from "@/lib/landing-data";
 import { displayPrice, getCatalog } from "@/lib/pricing";
 import { PLANS } from "@/lib/plans";
+import { assetUrl } from "@/lib/content";
 
 async function Landing() {
   const [c, cat] = await Promise.all([getLanding(), getCatalog()]);
@@ -56,6 +57,16 @@ async function Landing() {
           {c.hero.headline}
         </h1>
         <p className="text-lg text-muted">{c.hero.support}</p>
+        {c.hero.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={assetUrl(c.hero.image.path)}
+            alt={c.hero.image.alt}
+            width={c.hero.image.width}
+            height={c.hero.image.height}
+            className="mx-auto mt-6 h-auto max-h-[280px] w-auto max-w-full rounded-panel"
+          />
+        ) : null}
       </section>
       <div className="mb-14">
         <Workbench cta={c.hero.cta} freeNote={c.hero.freeNote} />

@@ -37,8 +37,24 @@ http.createServer(async (req, res) => {
   res.setHeader("access-control-expose-headers", "content-range");
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
   if (u.pathname === "/__ctl") { // control: GET state, POST merge
-    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.reset) { state.users = {}; state.tables = {}; state.rpc = {}; } if (b.users) Object.assign(state.users, b.users); if (b.tables) for (const [t, rows] of Object.entries(b.tables)) state.tables[t] = rows; if (b.rpc) Object.assign(state.rpc, b.rpc); if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
+    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.reset) { state.users = {}; state.tables = {}; state.rpc = {}; state.objects = {}; } if (b.users) Object.assign(state.users, b.users); if (b.tables) for (const [t, rows] of Object.entries(b.tables)) state.tables[t] = rows; if (b.rpc) Object.assign(state.rpc, b.rpc); if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
     return json(res, 200, { ...state, user: undefined });
+  }
+  // Storage stand-in: keeps uploaded objects in memory so the page can show them. Not a model of Supabase Storage policy.
+  const so = /^\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/.exec(u.pathname);
+  if (u.pathname.startsWith("/storage/v1/")) {
+    state.objects ??= {};
+    if (req.method === "GET" && so) { const o = state.objects[so[2]]; if (!o) return json(res, 404, { message: "not found" }); res.writeHead(200, { "content-type": o.type }); return res.end(o.data); }
+    if (state.fail.storage) { req.resume(); return json(res, 500, { message: "mock storage failure" }); }
+    if (req.method === "POST" && so) {
+      const chunks = []; for await (const c of req) chunks.push(c);
+      const raw = Buffer.concat(chunks); const ct = req.headers["content-type"] ?? "";
+      state.objects[decodeURIComponent(so[2])] = { type: ct.startsWith("multipart/") ? "application/octet-stream" : ct, data: raw };
+      state.log.push({ op: "storage_put", bucket: so[1], path: decodeURIComponent(so[2]), bytes: raw.length });
+      return json(res, 200, { Key: `${so[1]}/${so[2]}`, Id: crypto.randomUUID() });
+    }
+    if (req.method === "DELETE") { const b = await body(req); for (const p of b?.prefixes ?? []) delete state.objects[p]; state.log.push({ op: "storage_delete", prefixes: b?.prefixes }); return json(res, 200, []); }
+    return json(res, 404, {});
   }
   if (u.pathname === "/auth/v1/user" && req.method === "GET") {
     let sub = uid; try { sub = JSON.parse(Buffer.from((req.headers.authorization ?? "").split(".")[1] ?? "", "base64url").toString()).sub ?? uid; } catch {}
@@ -96,7 +112,8 @@ http.createServer(async (req, res) => {
   // RLS stand-in: everything belongs to the single test user
   if (req.method === "GET" || req.method === "HEAD") return send(filterRows(T(), u.searchParams));
   if (req.method === "POST") {
-    const b = await body(req); const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
+    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" } }; // column defaults the real database applies
+    const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ ...(DEFAULTS[table] ?? {}), id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
     if (generic) { state.log.push({ op: "insert", table, rows }); }
     if (table === "payments" && rows.some((r) => state.payments.some((p) => p.reference === r.reference))) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
     if (table === "subscriptions") { /* upsert */ for (const r of rows) { const i = state.subscriptions.findIndex((x) => x.user_id === r.user_id); if (i >= 0) { Object.assign(state.subscriptions[i], r); } else state.subscriptions.push(r); } return send(rows, 201); }

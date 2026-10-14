@@ -1,4 +1,5 @@
-import { Blocked, DataTable, Denied, Empty, LoadError, PageHead, Panel, Td, lagos } from "@/components/admin/kit";
+import ImageLibrary, { type AssetRow } from "@/components/admin/ImageLibrary";
+import { DataTable, Denied, Empty, LoadError, PageHead, Panel, Td, lagos } from "@/components/admin/kit";
 import ContentEditor from "@/components/admin/ContentEditor";
 import { ActionButton } from "@/components/admin/Mutation";
 import { currentStaff } from "@/lib/admin/guard";
@@ -13,17 +14,18 @@ export default async function Content() {
   const { caps } = s.staff;
   const state = await load(async () => {
     const db = adm();
-    const [draft, pub, revs] = await Promise.all([
+    const [draft, pub, revs, imgs] = await Promise.all([
       db.from("content_drafts").select("data,version,updated_at").eq("page", "landing").maybeSingle(),
       db.from("content_published").select("revision_id,published_at").eq("page", "landing").maybeSingle(),
       db.from("content_revisions").select("id,created_at,data,author_id,published_by").eq("page", "landing").order("id", { ascending: false }).limit(15),
+      db.from("content_assets").select("id,path,alt,width,height,bytes,state,created_at").order("created_at", { ascending: false }).limit(100),
     ]);
     const published = q(pub) as { revision_id: number; published_at: string } | null;
-    return { draft: q(draft) as { data: unknown; version: number; updated_at: string } | null, published, revs: q(revs) as Rev[] };
+    return { draft: q(draft) as { data: unknown; version: number; updated_at: string } | null, published, revs: q(revs) as Rev[], assets: (q(imgs) ?? []) as AssetRow[] };
   });
 
   if (!state.ok) return (<><PageHead title="Landing content" /><LoadError what="the landing content" /></>);
-  const { draft, published, revs } = state.data;
+  const { draft, published, revs, assets } = state.data;
   const live = published ? revs.find((r) => r.id === published.revision_id) : undefined;
   const liveParsed = live ? validateLanding(live.data) : null;
   const draftParsed = draft ? validateLanding(draft.data) : null;
@@ -38,7 +40,7 @@ export default async function Content() {
         title="Landing content"
         lead={published ? `Live version published ${lagos(published.published_at)}. Draft changes are not live.` : "Nothing has been published yet, so the website shows the built-in text. Draft changes are not live."}
       />
-      <ContentEditor initial={initial} version={version} canPublish={canPublish} publishedSame={same} />
+      <ContentEditor initial={initial} version={version} canPublish={canPublish} publishedSame={same} assets={assets.filter((a) => a.state === "active")} />
 
       <div className="mt-10" />
       <Panel title="History">
@@ -61,7 +63,7 @@ export default async function Content() {
       </Panel>
 
       <Panel title="Images">
-        <Blocked title="Image library" dependency="A storage bucket for uploads and a verified image and SVG sanitiser (strips scripts, checks type, size and alt text). Until then the landing page uses no uploaded images, so nothing is published without being checked." />
+        <ImageLibrary assets={assets} canManage={caps.has("media.manage")} />
       </Panel>
     </>
   );

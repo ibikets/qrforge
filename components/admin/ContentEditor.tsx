@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { controlClass } from "@/components/ui/Field";
 import { ActionButton } from "@/components/admin/Mutation";
 import { FaqBlock, UsesBlock } from "@/components/landing/Blocks";
-import { LIMITS, type Landing } from "@/lib/content";
+import { LIMITS, assetUrl, type Landing } from "@/lib/content";
+import type { AssetRow } from "@/components/admin/ImageLibrary";
 
 const TABS = [
   ["hero", "Headline and button"],
@@ -17,7 +18,7 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 type Status = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: string } | { kind: "error"; message: string; field?: string; conflict?: boolean };
 
-export default function ContentEditor({ initial, version, canPublish, publishedSame }: { initial: Landing; version: number; canPublish: boolean; publishedSame: boolean }) {
+export default function ContentEditor({ initial, version, canPublish, publishedSame, assets }: { initial: Landing; version: number; canPublish: boolean; publishedSame: boolean; assets: AssetRow[] }) {
   const router = useRouter();
   const [data, setData] = useState<Landing>(initial);
   const [ver, setVer] = useState(version);
@@ -93,6 +94,20 @@ export default function ContentEditor({ initial, version, canPublish, publishedS
               {field("hero.support", "Support line", data.hero.support, (v) => edit((d) => { d.hero.support = v; return d; }), { max: LIMITS.support, area: true })}
               {field("hero.cta", "Button label", data.hero.cta, (v) => edit((d) => { d.hero.cta = v; return d; }), { max: LIMITS.cta })}
               {field("hero.freeNote", "Free plan note", data.hero.freeNote, (v) => edit((d) => { d.hero.freeNote = v; return d; }), { max: LIMITS.freeNote })}
+              <fieldset className="mb-2" data-field="hero.image">
+                <legend className="mb-1 text-sm font-medium">Image under the headline (optional)</legend>
+                <p className="mb-2 text-[13px] text-muted">Choose from the image library below. Upload new images there first.</p>
+                <label className="mb-2 flex min-h-11 items-center gap-3 text-sm"><input type="radio" name="hero-image" checked={!data.hero.image} onChange={() => edit((d) => { d.hero.image = null; return d; })} /> No image</label>
+                {assets.map((a) => (
+                  <label key={a.id} className="mb-2 flex min-h-11 items-center gap-3 text-sm">
+                    <input type="radio" name="hero-image" checked={data.hero.image?.assetId === a.id} onChange={() => edit((d) => { d.hero.image = { assetId: a.id, path: a.path, alt: a.alt, width: a.width, height: a.height }; return d; })} />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={assetUrl(a.path)} alt="" width={48} height={48} className="size-12 rounded-control bg-soft object-contain" />
+                    <span>{a.alt}</span>
+                  </label>
+                ))}
+                {err("hero.image") ? <p className="text-[13px] text-danger">{err("hero.image")}</p> : null}
+              </fieldset>
             </>
           )}
           {tab === "uses" && (
@@ -170,6 +185,10 @@ export default function ContentEditor({ initial, version, canPublish, publishedS
         <p className="mb-4 text-[13px] text-muted">Draft changes are not live. Prices show on the real page.</p>
         <p className="mb-1 text-xl font-semibold">{data.hero.headline || "…"}</p>
         <p className="mb-2 text-muted">{data.hero.support}</p>
+        {data.hero.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={assetUrl(data.hero.image.path)} alt={data.hero.image.alt} width={data.hero.image.width} height={data.hero.image.height} className="mb-3 h-auto max-h-40 w-auto max-w-full rounded-panel" />
+        ) : null}
         <p className="mb-4"><span className="inline-block rounded-control bg-brand px-4 py-2 text-sm font-medium text-white">{data.hero.cta || "…"}</span></p>
         <p className="mb-6 text-[13px] text-muted">{data.hero.freeNote}</p>
         <UsesBlock uses={data.uses.filter((u) => u.title)} />

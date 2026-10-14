@@ -108,7 +108,7 @@ async function Details() {
             <p className="mt-3">
               {sub.auto_renew && hasCard
                 ? `Renews automatically on ${fmt(sub.current_period_end)} at ${formatNaira(renewKobo / 100)}.`
-                : `Active until ${fmt(sub.current_period_end)}. Auto-renewal is off.`}
+                : `Active until ${fmt(sub.current_period_end)}. ${sub.auto_renew ? "It will not renew automatically yet (see below)." : "Auto-renewal is off."}`}
             </p>
             {sub.auto_renew && !hasCard ? (
               <p className="mt-2 text-sm text-warning">

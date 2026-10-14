@@ -8,7 +8,7 @@ const A = {
   plans: { create_draft: "pd", discard_draft: "pd", publish: "pp", archive: "pp" },
   campaigns: { save_draft: "pd", publish: "cp", pause: "cp", archive: "cp" },
   payments: { reconcile: "pr", refund_request: "rr", refund_decide: "rd", refund_execute: "rd" },
-  content: { save_draft: "cd", restore_revision: "cd", publish: "cpub", upload_asset: "media" },
+  content: { save_draft: "cd", restore_revision: "cd", publish: "cpub", archive_asset: "media" },
   staff: { invite: "st", revoke_invite: "st", change_role: "st", revoke: "st", restore: "st" },
   jobs: { preview: "rel", run: "rel", promote: "rel", rollback: "rel" },
   settings: { set: "set", clear: "set" },

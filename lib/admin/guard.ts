@@ -91,6 +91,25 @@ export type RouteResult = { status?: number; data?: Record<string, unknown>; aud
 export type ActionSpec = { cap: Cap; reason?: boolean; limit?: number; handler: (ctx: RouteCtx) => Promise<RouteResult> };
 
 /**
+ * The same gate as adminActions for routes that cannot be JSON (file uploads): same-origin, fresh staff lookup, MFA,
+ * capability, step-up and rate limit, in the same order. Returns the staff or the response to send.
+ */
+export async function authorise(req: Request, cap: Cap, name: string, limit = 30): Promise<{ staff: Staff } | { response: Response }> {
+  if (!sameOrigin(req)) return { response: forbidden() };
+  const state = await currentStaff();
+  if (state.status === "anonymous") return { response: json(401, { error: "Sign in again to continue." }) };
+  if (state.status === "unavailable") return { response: json(503, { error: "Management is not available yet.", reason: state.reason }) };
+  if (state.status === "not_staff" || state.status === "revoked") return { response: json(403, { error: "Your staff role cannot do this." }) };
+  if (state.status === "needs_mfa") return { response: json(403, { error: "Complete multi-factor sign-in first.", code: "mfa_required" }) };
+  const { staff } = state;
+  const limited = rateLimit(req, `admin:${name}`, limit, 60_000, staff.userId);
+  if (limited) return { response: limited };
+  if (!staff.caps.has(cap)) return { response: json(403, { error: "Your staff role cannot do this." }) };
+  if (STEP_UP.has(cap) && Date.now() - staff.signedInAt > STEP_UP_MAX_AGE_MS) return { response: json(403, { error: "Sign in again to confirm this action.", code: "reauth_required" }) };
+  return { staff };
+}
+
+/**
  * Every privileged mutation goes through here, so none can skip a check:
  * same-origin, fresh staff lookup, MFA, per-action capability, step-up, bounded JSON, reason, the handler, then the audit record.
  * The capability is chosen by the SERVER from the action name; nothing in the body can select a weaker one.

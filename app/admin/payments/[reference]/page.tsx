@@ -19,16 +19,17 @@ export default async function PaymentDetail({ params }: { params: Promise<{ refe
     const db = adm();
     const p = q(await db.from("payments").select("*").eq("reference", reference).maybeSingle());
     if (!p) return null;
-    const [refunds, campaign, user] = await Promise.all([
+    const [events, refunds, campaign, user] = await Promise.all([
+      db.from("payment_events").select("id,at,source,event,outcome").eq("reference", reference).order("id", { ascending: false }).limit(30),
       db.from("refund_requests").select("id,amount_kobo,reason,state,created_at,decision_reason").eq("reference", reference).order("created_at", { ascending: false }),
       p.campaign_id ? db.from("campaigns").select("name,slug").eq("id", p.campaign_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
       db.auth.admin.getUserById(p.user_id),
     ]);
-    return { p, refunds: q(refunds) as R[], campaign: q(campaign) as { name: string; slug: string } | null, email: user.data?.user?.email ?? null };
+    return { p, events: (events.error ? null : events.data) as { id: number; at: string; source: string; event: string | null; outcome: string }[] | null, refunds: q(refunds) as R[], campaign: q(campaign) as { name: string; slug: string } | null, email: user.data?.user?.email ?? null };
   });
   if (!d.ok) return (<><PageHead title="Payment" /><LoadError what="this payment" /></>);
   if (!d.data) notFound();
-  const { p, refunds, campaign, email } = d.data;
+  const { p, events, refunds, campaign, email } = d.data;
   const reserved = refunds.filter((r) => ["requested", "approved", "executed"].includes(r.state)).reduce((a, r) => a + r.amount_kobo, 0);
   const remaining = p.amount_kobo - reserved;
 
@@ -41,18 +42,30 @@ export default async function PaymentDetail({ params }: { params: Promise<{ refe
           ["Customer", caps.has("customers.read") || caps.has("customers.read_minimal") ? <Link key="c" href={`/admin/customers/${p.user_id}`} className={linkCls}>{email ?? "Unknown"}</Link> : (email ?? "Unknown")],
           ["Plan", p.plan],
           ["Normal price", kobo(p.base_kobo ?? p.amount_kobo)],
-          ["Discount", p.discount_kobo ? `${kobo(p.discount_kobo)}${campaign ? ` (${campaign.name}, v${p.campaign_version})` : ""}` : "None"],
+          ["Discount", p.discount_kobo ? `${kobo(p.discount_kobo)}${campaign ? ` (${campaign.name}${p.campaign_version ? `, version ${p.campaign_version}` : ""})` : ""}` : "None"],
           ["Paid", kobo(p.amount_kobo)],
           ["Quote", p.quote_id ?? "No quote: paid before offers existed, or a renewal"],
         ]} />
       </Panel>
       <Panel title="Reconcile">
         <ReconcileButton reference={reference} />
-        <div className="mt-4">
-          <Blocked title="Callback and webhook history" dependency="Delivery events are not stored yet. Recording each provider event (time, signature result, outcome) would add this timeline." />
-        </div>
+        <h3 className="mb-2 mt-6 font-medium">Callback and webhook history</h3>
+        {events === null ? <LoadError what="the delivery history" /> : events.length === 0 ? (
+          <Empty title="No deliveries recorded yet">Events are recorded from now on. Earlier payments have no history. The payment provider’s own record is checked with Reconcile above.</Empty>
+        ) : (
+          <DataTable label="Provider deliveries" head={["Received", "Source", "Event", "Result"]}>
+            {events.map((e) => (
+              <tr key={e.id}>
+                <Td>{lagos(e.at)}</Td>
+                <Td>{e.source === "webhook" ? "Webhook (signature checked)" : "Customer return page"}</Td>
+                <Td>{e.event ?? "–"}</Td>
+                <Td>{({ confirmed: "Confirmed", pending: "Still pending", failed: "Not successful", retry_requested: "Asked the provider to retry", ignored: "Not a payment event we act on" } as Record<string, string>)[e.outcome] ?? e.outcome}</Td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
       </Panel>
-      <Panel title="Refunds" aside={<span className="text-sm text-muted">Remaining refundable: {kobo(remaining)}</span>}>
+      <Panel title="Refunds" aside={<span className="text-sm text-muted">Still refundable: {kobo(remaining)}{reserved > 0 ? ` (${kobo(reserved)} already requested or refunded)` : ""}</span>}>
         <p className="mb-4 text-sm text-muted">Review the payment and remaining refundable amount. Entitlement changes are separate.</p>
         {refunds.length === 0 ? <Empty title="No refund requests" /> : (
           <DataTable label="Refund requests" head={["Requested", "Amount", "Reason", "State", ""]}>

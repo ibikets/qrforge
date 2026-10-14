@@ -438,6 +438,50 @@ begin
 end $$;
 
 -- ===== 8. Support ============================================================================================
+
+-- Image library: files live in the public bucket "site-assets" (written only by the server with the service key);
+-- this table is the checked record of each one. Images are archived, never deleted, so live pages never break.
+create table qrforge.content_assets (
+  id uuid primary key default gen_random_uuid(),
+  path text not null unique check (path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$'),
+  mime text not null check (mime in ('image/png','image/jpeg','image/webp')),
+  bytes integer not null check (bytes between 1 and 2097152),
+  width integer not null check (width between 1 and 4000),
+  height integer not null check (height between 1 and 4000),
+  alt text not null check (char_length(alt) between 5 and 200),
+  state text not null default 'active' check (state in ('active','archived')),
+  uploaded_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+do $$
+begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('site-assets', 'site-assets', true, 2097152, array['image/png','image/jpeg','image/webp'])
+    on conflict (id) do update set public = true, file_size_limit = 2097152, allowed_mime_types = array['image/png','image/jpeg','image/webp'];
+  end if;
+end $$;
+
+
+-- Provider callback / webhook history shown on the payment screen. Only events whose signature checked out (webhook) or that came
+-- through a signed-in customer's return page are recorded, one row per reference/source/outcome per minute at most.
+create table qrforge.payment_events (
+  id bigint generated always as identity primary key,
+  reference text not null check (reference ~ '^qrf_[A-Za-z0-9_-]{4,70}$'),
+  source text not null check (source in ('callback','webhook')),
+  event text check (char_length(event) <= 60),
+  outcome text not null check (outcome in ('confirmed','pending','failed','retry_requested','ignored')),
+  at timestamptz not null default now()
+);
+create index payment_events_reference_idx on qrforge.payment_events (reference, at desc);
+create function qrforge.record_payment_event(p_reference text, p_source text, p_outcome text, p_event text)
+returns void language plpgsql security definer set search_path = pg_catalog, qrforge as $$
+begin
+  if p_reference !~ '^qrf_[A-Za-z0-9_-]{4,70}$' then return; end if;
+  if exists (select 1 from qrforge.payment_events where reference = p_reference and source = p_source and outcome = p_outcome and at > now() - interval '1 minute') then return; end if;
+  insert into qrforge.payment_events (reference, source, event, outcome) values (p_reference, p_source, left(p_event, 60), p_outcome);
+end $$;
+
 create table qrforge.support_tickets (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid references auth.users(id) on delete set null,
@@ -550,7 +594,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['staff_members','staff_invites','audit_events','customer_profiles','customer_notes','plan_versions','campaigns',
-      'campaign_targets','campaign_versions','quotes','redemptions','refund_requests','entitlement_adjustments','content_drafts',
+      'campaign_targets','campaign_versions','content_assets','payment_events','quotes','redemptions','refund_requests','entitlement_adjustments','content_drafts',
       'content_revisions','content_published','support_tickets','ticket_messages','app_settings']
   loop
     execute format('alter table qrforge.%I enable row level security', t);
@@ -566,6 +610,8 @@ revoke all on function qrforge.payments_by_day(timestamptz, timestamptz) from pu
 grant execute on function qrforge.list_customers(text, text, integer, integer) to service_role;
 grant execute on function qrforge.stats_summary(timestamptz, timestamptz) to service_role;
 grant execute on function qrforge.payments_by_day(timestamptz, timestamptz) to service_role;
+revoke all on function qrforge.record_payment_event(text, text, text, text) from public, anon, authenticated;
+grant execute on function qrforge.record_payment_event(text, text, text, text) to service_role;
 revoke all on function qrforge.bootstrap_owner(uuid, text) from public, anon, authenticated;
 revoke all on function qrforge.accept_invite(text, uuid, text) from public, anon, authenticated;
 grant execute on function qrforge.bootstrap_owner(uuid, text) to service_role;

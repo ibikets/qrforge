@@ -347,3 +347,12 @@ export async function renewDueSubscriptions() {
   }
   return summary;
 }
+
+/** Best-effort history for the management screen. Never throws and never changes what the customer or Paystack sees. */
+export async function recordPaymentEvent(reference: string, source: "callback" | "webhook", outcome: "confirmed" | "pending" | "failed" | "retry_requested" | "ignored", event?: string) {
+  try {
+    await supabaseAdmin().rpc("record_payment_event", { p_reference: reference, p_source: source, p_outcome: outcome, p_event: event ?? null });
+  } catch {
+    /* history only */
+  }
+}

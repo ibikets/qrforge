@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import ReturnToDraft from "@/components/ReturnToDraft";
 import RetryButton from "@/components/RetryButton";
 import { LinkButton } from "@/components/ui/Button";
-import { activateFromReference } from "@/lib/paystack";
+import { activateFromReference, recordPaymentEvent } from "@/lib/paystack";
 import { PLANS, formatNaira } from "@/lib/plans";
 import { getSession } from "@/lib/supabase";
 
@@ -30,6 +30,9 @@ async function Result({
         : "";
   const r = ref ? await activateFromReference(ref) : null;
   const { userId } = await getSession();
+  // History for the management screen: only for a signed-in customer's return, so anonymous visits cannot fill it.
+  if (r && userId && r.state !== "failed") await recordPaymentEvent(ref, "callback", r.state);
+  else if (r && userId) await recordPaymentEvent(ref, "callback", "failed");
 
   if (r?.state === "confirmed" && r.plan) {
     // The actual expiry is shown only to the person who paid.

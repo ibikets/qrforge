@@ -2,6 +2,7 @@
 -- content, tickets and settings are dropped. payments and subscriptions keep their rows; the added columns are removed.
 -- Take a backup first. Customer data (qr_codes, subscriptions, payments) is not otherwise touched.
 begin;
+drop function if exists qrforge.record_payment_event(text, text, text, text);
 drop function if exists qrforge.payments_by_day(timestamptz, timestamptz);
 drop function if exists qrforge.stats_summary(timestamptz, timestamptz);
 drop function if exists qrforge.list_customers(text, text, integer, integer);
@@ -17,7 +18,7 @@ drop function if exists qrforge.issue_quote(uuid, text, text, text, boolean, int
 alter table qrforge.payments drop column if exists quote_id, drop column if exists base_kobo, drop column if exists discount_kobo,
   drop column if exists campaign_id, drop column if exists campaign_version;
 alter table qrforge.subscriptions drop column if exists renewal_kobo;
-drop table if exists qrforge.app_settings, qrforge.ticket_messages, qrforge.support_tickets, qrforge.content_published,
+drop table if exists qrforge.payment_events, qrforge.content_assets, qrforge.app_settings, qrforge.ticket_messages, qrforge.support_tickets, qrforge.content_published,
   qrforge.content_revisions, qrforge.content_drafts, qrforge.entitlement_adjustments, qrforge.refund_requests,
   qrforge.redemptions, qrforge.quotes, qrforge.campaign_versions, qrforge.campaign_targets, qrforge.campaigns,
   qrforge.plan_versions, qrforge.customer_notes, qrforge.customer_profiles, qrforge.audit_events,
@@ -25,4 +26,5 @@ drop table if exists qrforge.app_settings, qrforge.ticket_messages, qrforge.supp
 drop function if exists qrforge.plan_version_guard();
 drop function if exists qrforge.audit_immutable();
 drop function if exists qrforge.protect_last_owner();
+-- The bucket and any uploaded files are NOT removed here (deleting storage objects is done in the dashboard, deliberately).
 commit;

@@ -2,8 +2,15 @@
  * Structured landing-page content. Plain text only: no HTML, no scripts, no raw styles.
  * The published revision is validated again on every read, so a bad row can never break or poison the public page.
  */
+/** A checked, stored image chosen from the library. The server fills every field from its own record; nothing here comes from the browser. */
+export type HeroImage = { assetId: string; path: string; alt: string; width: number; height: number };
+export const ASSET_BUCKET = "site-assets";
+const ASSET_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const assetUrl = (path: string) => `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${ASSET_BUCKET}/${path}`;
+
 export type Landing = {
-  hero: { headline: string; support: string; cta: string; freeNote: string };
+  hero: { headline: string; support: string; cta: string; freeNote: string; image?: HeroImage | null };
   uses: { title: string; body: string }[];
   plans: { pro: string; business: string };
   faq: { q: string; a: string }[];
@@ -56,6 +63,14 @@ export function validateLanding(input: unknown): R {
     cta: text(o.hero?.cta, LIMITS.cta),
     freeNote: text(o.hero?.freeNote, LIMITS.freeNote),
   };
+  let image: HeroImage | null = null;
+  const im = o.hero?.image;
+  if (im != null) {
+    const alt = text(im.alt, 200, 5);
+    const ok = typeof im.assetId === "string" && UUID_RE.test(im.assetId) && typeof im.path === "string" && ASSET_PATH.test(im.path) && Number.isInteger(im.width) && Number.isInteger(im.height) && im.width > 0 && im.width <= 4000 && im.height > 0 && im.height <= 4000;
+    if (!ok || !alt) return bad("hero.image", "Choose a stored image with a short description (5 to 200 characters).");
+    image = { assetId: im.assetId, path: im.path, alt, width: im.width, height: im.height };
+  }
   for (const [k, v] of Object.entries(hero)) if (v === null) return bad(`hero.${k}`, `Check the ${k === "freeNote" ? "free-plan note" : k === "cta" ? "button label" : k}: text only, no angle brackets, within the length limit.`);
   if (!Array.isArray(o.uses) || o.uses.length < 1 || o.uses.length > LIMITS.usesMax) return bad("uses", `Add 1 to ${LIMITS.usesMax} popular uses.`);
   const uses: Landing["uses"] = [];
@@ -96,5 +111,5 @@ export function validateLanding(input: unknown): R {
     }
     links.push({ label, url });
   }
-  return { ok: true, data: { hero: hero as Landing["hero"], uses, plans: { pro, business }, faq, footer: { links } } };
+  return { ok: true, data: { hero: { ...(hero as Omit<Landing["hero"], "image">), ...(image ? { image } : {}) }, uses, plans: { pro, business }, faq, footer: { links } } };
 }

@@ -300,6 +300,34 @@ const st = (await q("select qrforge.stats_summary(now()-interval '30 days', now(
 ok(st.payments_confirmed >= 3 && st.gross_kobo > 0 && st.discount_kobo >= 87500 && st.redemptions_consumed >= 2, "READ: statistics are computed from real rows (payments, discount, redemptions)");
 ok((await q("select * from qrforge.payments_by_day(now()-interval '30 days', now()+interval '1 day')")).length >= 1, "READ: payments by day returns rows");
 
+// ---------- image library ----------
+const aid = "5f2c1d0e-0000-4000-8000-00000000a001";
+const ins = (path, mime = "image/png", bytes = 1000, alt = "A valid description") => tryq(admin, "insert into qrforge.content_assets(path,mime,bytes,width,height,alt) values($1,$2,$3,64,48,$4)", [path, mime, bytes, alt]);
+ok((await ins(`${aid}.png`)).ok, "ASSETS: a well-formed record is accepted (state defaults to active)");
+ok((await q("select state from qrforge.content_assets where path=$1", [`${aid}.png`]))[0].state === "active", "ASSETS: new images default to active");
+ok(!(await ins("../../etc/passwd")).ok, "ASSETS: path traversal rejected by the database");
+ok(!(await ins(`${aid}.svg`, "image/svg+xml")).ok, "ASSETS: SVG rejected by the database (path and type)");
+ok(!(await ins("https://evil.example/x.png")).ok, "ASSETS: an absolute URL is not a valid path");
+ok(!(await ins("5f2c1d0e-0000-4000-8000-00000000a002.png", "image/png", 1000, "abc")).ok, "ASSETS: alt text under 5 characters rejected");
+ok(!(await ins("5f2c1d0e-0000-4000-8000-00000000a003.png", "image/png", 3_000_000)).ok, "ASSETS: files over 2 MB rejected");
+ok(!(await asRole("authenticated", cu, "select * from qrforge.content_assets")).ok, "ASSETS: a signed-in customer cannot read the asset table");
+ok(!(await asRole("anon", null, "select * from qrforge.content_assets")).ok, "ASSETS: anonymous cannot read the asset table");
+ok(!(await asRole("authenticated", cu, "insert into qrforge.content_assets(path,mime,bytes,width,height,alt) values('5f2c1d0e-0000-4000-8000-00000000a004.png','image/png',10,10,10,'sneaky insert')")).ok, "ASSETS: a customer cannot add images");
+
+// ---------- payment delivery history ----------
+await q("select qrforge.record_payment_event('qrf_hist_1','webhook','confirmed','charge.success')");
+await q("select qrforge.record_payment_event('qrf_hist_1','webhook','confirmed','charge.success')");
+ok((await q("select count(*) c from qrforge.payment_events where reference='qrf_hist_1'"))[0].c == 1, "EVENTS: an identical delivery within a minute is recorded once");
+await q("select qrforge.record_payment_event('qrf_hist_1','callback','confirmed',null)");
+await q("select qrforge.record_payment_event('qrf_hist_1','webhook','failed','charge.success')");
+ok((await q("select count(*) c from qrforge.payment_events where reference='qrf_hist_1'"))[0].c == 3, "EVENTS: a different source or outcome is a new row");
+await q("select qrforge.record_payment_event('not-a-reference','callback','pending',null)");
+await q("select qrforge.record_payment_event($1,'callback','pending',null)", ["qrf_" + "x".repeat(200)]);
+ok((await q("select count(*) c from qrforge.payment_events where reference not like 'qrf_hist_%'"))[0].c == 0, "EVENTS: malformed or oversized references are ignored (cannot be used to fill the table)");
+ok(!(await asRole("authenticated", cu, "select qrforge.record_payment_event('qrf_hist_2','callback','confirmed',null)")).ok, "EVENTS: a customer cannot write history");
+ok(!(await asRole("authenticated", cu, "select * from qrforge.payment_events")).ok, "EVENTS: a customer cannot read history");
+ok(!(await tryq(admin, "insert into qrforge.payment_events(reference,source,outcome) values('qrf_bad_1','email','confirmed')")).ok, "EVENTS: only the two real sources are allowed");
+
 // ---------- rollback and re-apply ----------
 await admin.query(sql("supabase/rollback/20261015000000_admin_portal.down.sql"));
 const gone = (await q("select to_regclass('qrforge.staff_members') a, to_regclass('qrforge.quotes') b, (select count(*) from information_schema.columns where table_schema='qrforge' and table_name='payments' and column_name='quote_id') c"))[0];
