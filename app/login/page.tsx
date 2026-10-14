@@ -16,7 +16,7 @@ async function Form({ searchParams }: { searchParams: Promise<Record<string, str
         key={mode}
         next={safeNext(one("next"))}
         initialMode={mode}
-        notice={one("error") === "auth" ? "auth-error" : one("reset") === "1" ? "reset-done" : null}
+        notice={one("error") === "auth" ? "auth-error" : one("reset") === "1" ? "reset-done" : one("timeout") === "1" ? "timeout" : null}
       />
     </AuthShell>
   );

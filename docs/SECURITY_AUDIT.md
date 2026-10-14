@@ -45,3 +45,8 @@ Evidence labels: **STAND-IN** = local Supabase/Paystack stand-ins or a local Pos
 - Cross-user behaviour on the real database (the SQL prompt was cancelled twice; `supabase/tests/ownership_rollback.sql` is ready to paste and always rolls back).
 - Response headers on the live site (the sandbox cannot reach it).
 - Behaviour under load; a global rate limit.
+
+## Session timeout (added with the Qrenuvi rollout)
+- Signed-in sessions end after 20 minutes without activity. `proxy.ts` enforces it on every request using the httpOnly `qrf-active` cookie (revokes the current session only; API calls get 401, pages redirect to `/login?timeout=1` with a safe `next`).
+- `IdleSignOut` mirrors the limit in the browser: a "Still there?" prompt one minute before, then sign-out. Activity pings `/api/session` at most once a minute and is shared across tabs.
+- Signed-in visitors are redirected away from `/login`. Limits: the 20 minutes is idle time, not a maximum session length; Supabase's own session lifetime still applies.

@@ -46,7 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <Suspense fallback={<NavShell email={null} />}>
+        <Suspense fallback={<NavShell email={undefined} />}>
           <AuthNav />
         </Suspense>
         <div className="shell-main flex min-h-dvh flex-col">

@@ -23,7 +23,7 @@ export default function LoginForm({
 }: {
   next: string;
   initialMode: "in" | "up";
-  notice: "auth-error" | "reset-done" | null;
+  notice: "auth-error" | "reset-done" | "timeout" | null;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"in" | "up">(initialMode);
@@ -103,6 +103,11 @@ export default function LoginForm({
       {notice === "auth-error" ? (
         <Notice tone="error" live title="We couldn’t complete sign-in">
           The link may have expired or was opened in a different browser. Try signing in again.
+        </Notice>
+      ) : null}
+      {notice === "timeout" ? (
+        <Notice live title="You were signed out">
+          For your security, we sign you out after 20 minutes of inactivity. Sign in to continue.
         </Notice>
       ) : null}
       {notice === "reset-done" ? (
