@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { siteOrigin } from "@/lib/site";
 import { adminActions, fail } from "@/lib/admin/guard";
 import { EXTRA_GRANTS, ROLES, type Role } from "@/lib/admin/permissions";
 import { email, int, must, oneOf, stringList, uuid } from "@/lib/admin/validate";
@@ -20,7 +21,7 @@ export const POST = adminActions({
       const hash = createHash("sha256").update(token).digest("hex");
       const db = supabaseAdmin();
       must(await db.from("staff_invites").insert({ email: to, role, extra_grants: grants, token_hash: hash, invited_by: staff.userId, expires_at: new Date(Date.now() + INVITE_TTL_MS).toISOString() }).select("id").single());
-      const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin;
+      const origin = siteOrigin(req);
       return { status: 201, data: { link: `${origin}/staff-invite?token=${token}`, expires_in_hours: INVITE_TTL_MS / 3600_000 }, audit: { action: "staff.invite", targetType: "invite", targetId: to, after: { email: to, role, grants } } };
     },
   },

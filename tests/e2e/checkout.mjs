@@ -49,7 +49,7 @@ await ctl({ reset: true, push: { subscriptions: [sub("business", 20)] } });
 // UI: pricing -> checkout
 { const { open } = await import("./lib.mjs"); await ctl({ reset: true, rpc: { issue_quote: { __status: 404, __body: { code: "PGRST202", message: "schema cache" } } } });
   const { browser, page, logs } = await open({ signedIn: true });
-  await page.goto(BASE + "/pricing"); await page.waitForSelector("text=Pay in Naira");
+  await page.goto(BASE + "/pricing"); await page.waitForSelector("text=Pay in Naira"); await page.waitForSelector("text=₦9,500");
   const t = await page.locator("body").innerText();
   ok(/₦3,500/.test(t) && /₦9,500/.test(t) && !/Priority support/.test(t), "pricing: exact prices, no unconfirmed claims");
   await page.getByRole("link", { name: /Choose Pro|Upgrade to Pro/ }).first().click().catch(async () => { await page.goto(BASE + "/checkout?plan=pro"); });

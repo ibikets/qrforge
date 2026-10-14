@@ -91,7 +91,12 @@ if (PHASE === "plain") {
   }, { setup: () => seed({ tables: { campaigns: [] } }) });
 }
 if (PHASE === "offer") {
-  S("landing-offer", "anon", "/", async ({ t, has }) => {
+  S("landing-offer", "anon", "/", async ({ page, t, has }) => {
+    // Public offers are cached for a few minutes (and the first render after a restart can be the build-time snapshot).
+    // The test reloads until the offer shows and records how long that took; publishing also revalidates the cache tag.
+    const t0 = Date.now();
+    for (let i = 0; i < 14 && !(await has("Launch offer: 20% off your first payment")); i++) { await page.waitForTimeout(10000); await page.reload({ waitUntil: "networkidle" }); }
+    t(`offer visible after ${Math.round((Date.now() - t0) / 1000)}s (cache lifetime: minutes)`, await has("Launch offer: 20% off your first payment"));
     t("public offer notice states audience, first payment only, renewal at normal price", await has("Launch offer: 20% off your first payment", "For customers who have never paid", "First payment only", "Renewals are at the normal price"));
     t("teaser shows first-payment price, normal price and renewal amount", await has("₦2,800 for the first 30 days", "₦3,500 normal price", "Then ₦3,500 / 30 days if you renew"));
     t("no countdown or scarcity wording", !(await has(/countdown|hurry|last chance|only \d+ left|ends in/i)));

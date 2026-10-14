@@ -14,7 +14,7 @@ const plex = localFont({
   display: "swap",
 });
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL;
+const SITE = process.env.VERCEL_ENV === "preview" && process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : process.env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
   ...(SITE ? { metadataBase: new URL(SITE) } : {}),

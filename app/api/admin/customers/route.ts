@@ -1,4 +1,5 @@
 import { adminActions, fail } from "@/lib/admin/guard";
+import { siteOrigin } from "@/lib/site";
 import { email, int, must, oneOf, str, uuid } from "@/lib/admin/validate";
 import { adm as supabaseAdmin } from "@/lib/admin/db";
 
@@ -68,7 +69,7 @@ export const POST = adminActions({
     async handler({ body, req }) {
       const { id, user } = await target(body);
       if (!user.email) throw fail(422, "This customer has no sign-in email.");
-      const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin;
+      const origin = siteOrigin(req);
       const { error } = await supabaseAdmin().auth.resetPasswordForEmail(user.email, { redirectTo: `${origin}/auth/callback?next=/reset-password` });
       if (error) throw fail(502, "The email provider did not accept the request. Nothing was sent.");
       return { data: { queued: true }, audit: { action: "customer.reset_email_requested", targetType: "customer", targetId: id } };

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { siteOrigin } from "@/lib/site";
 import { PLANS, PAID_PLANS, PLAN_RANK, type PlanId } from "@/lib/plans";
 import { getSession, supabaseAdmin, supabaseServer } from "@/lib/supabase";
 import { PAYSTACK_API, paystackHeaders } from "@/lib/paystack";
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     quoteId = q.id as string;
   }
 
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin;
+  const origin = siteOrigin(req);
   let res: Response;
   let json;
   try {
