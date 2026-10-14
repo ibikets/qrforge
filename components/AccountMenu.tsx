@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/Icons";
 
 /** Sign out, shared by the menu and the mobile list. Failure is reported, never swallowed. */
-export function useSignOut() {
+export function useSignOut(staff = false) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -20,6 +20,13 @@ export function useSignOut() {
     setBusy(true);
     setFailed(false);
     try {
+      if (staff) {
+        // Ends the staff session only; a customer session in this browser keeps working.
+        const res = await fetch("/api/admin/auth/logout", { method: "POST", credentials: "same-origin" });
+        if (!res.ok) throw new Error("logout");
+        window.location.assign("/admin/login");
+        return;
+      }
       const { error } = await supabaseBrowser().auth.signOut();
       if (error) throw error;
       router.push("/");
@@ -42,17 +49,19 @@ export default function AccountMenu({
   placement = "down",
   accountHref = "/account",
   accountLabel = "My account",
+  staff = false,
 }: {
   email: string;
   placement?: "down" | "up";
   accountHref?: string;
   accountLabel?: string;
+  staff?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
-  const { signOut, busy, failed } = useSignOut();
+  const { signOut, busy, failed } = useSignOut(staff);
 
   useEffect(() => {
     if (!open) return;

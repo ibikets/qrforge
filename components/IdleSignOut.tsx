@@ -1,14 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Dialog from "@/components/ui/Dialog";
-import { supabaseBrowser } from "@/lib/supabase-browser";
 import { IDLE_MS, WARN_MS } from "@/lib/session-policy";
 
-const KEY = "qrf:last-active"; // shared across tabs so activity in one tab keeps the others signed in
+const KEY_BASE = "qrf:last-active"; // shared across tabs so activity in one tab keeps the others signed in
 const PING_EVERY_MS = 60 * 1000;
 const EVENTS = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
 
-const read = () => {
+const read = (KEY: string) => {
   try {
     return Number(localStorage.getItem(KEY)) || Date.now();
   } catch {
@@ -17,7 +16,8 @@ const read = () => {
 };
 
 /** Signs the user out after IDLE_MS without activity. The server enforces the same limit (proxy.ts); this adds the warning and handles idle open tabs. */
-export default function IdleSignOut() {
+export default function IdleSignOut({ staff = false }: { staff?: boolean }) {
+  const KEY = staff ? `${KEY_BASE}:staff` : KEY_BASE;
   const [warn, setWarn] = useState(false);
   const lastPing = useRef(0);
   const leaving = useRef(false);
@@ -30,7 +30,7 @@ export default function IdleSignOut() {
       } catch {}
       if (now - lastPing.current > PING_EVERY_MS) {
         lastPing.current = now;
-        fetch("/api/session", { method: "POST", credentials: "same-origin" }).catch(() => {});
+        fetch(staff ? "/api/admin/auth/ping" : "/api/session", { method: "POST", credentials: "same-origin" }).catch(() => {});
       }
     };
     const onActivity = () => {
@@ -41,14 +41,18 @@ export default function IdleSignOut() {
       if (leaving.current) return;
       leaving.current = true;
       try {
-        await supabaseBrowser().auth.signOut({ scope: "local" });
+        if (staff) await fetch("/api/admin/auth/logout", { method: "POST", credentials: "same-origin" });
+        else {
+          const { supabaseBrowser } = await import("@/lib/supabase-browser");
+          await supabaseBrowser().auth.signOut({ scope: "local" });
+        }
       } catch {}
       // Full navigation on purpose: drops all cached signed-in UI state.
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.assign("/login?timeout=1");
+      const back = staff ? `/admin/login?timeout=1&next=${encodeURIComponent(window.location.pathname + window.location.search)}` : "/login?timeout=1";
+      window.location.assign(back);
     }
     const check = () => {
-      const idle = Date.now() - read();
+      const idle = Date.now() - read(KEY);
       if (idle >= IDLE_MS) void leave();
       else setWarn(idle >= IDLE_MS - WARN_MS);
     };

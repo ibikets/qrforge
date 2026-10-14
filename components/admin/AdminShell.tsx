@@ -26,7 +26,7 @@ export default function AdminShell({ items, roleLabel, email, canSearch, childre
   );
   return (
     <>
-      <IdleSignOut />
+      <IdleSignOut staff />
       <aside data-rail className="fixed inset-y-0 left-0 z-30 hidden w-54 flex-col gap-6 overflow-y-auto border-r border-divider bg-canvas px-4 py-6 min-[1000px]:flex">
         <Logo variant="horizontal" href="/admin" label="Qrenuvi management" className="self-start" />
         <nav aria-label="Management" className="grid gap-1">
@@ -36,7 +36,7 @@ export default function AdminShell({ items, roleLabel, email, canSearch, childre
           <p className="mb-2 px-1 text-[13px] text-muted">Role</p>
           <p className="mb-3 px-1 text-sm font-medium">{roleLabel}</p>
           <div className="flex items-center gap-2">
-            <AccountMenu email={email} placement="up" accountHref="/admin/security" accountLabel="Security" />
+            <AccountMenu email={email} placement="up" accountHref="/admin/security" accountLabel="Security" staff />
             <p className="min-w-0 break-words text-[13px] text-muted">{email}</p>
           </div>
         </div>

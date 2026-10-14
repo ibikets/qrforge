@@ -1,6 +1,8 @@
 import { connection } from "next/server";
 import { forbidden, rateLimit, readJson, sameOrigin } from "@/lib/request-guards";
-import { supabaseAdmin, supabaseConfigured, supabaseServer } from "@/lib/supabase";
+import { supabaseAdmin, supabaseConfigured } from "@/lib/supabase";
+import { claimsOf, hasPasswordLogin, lastAuthAt } from "@/lib/staff-auth";
+import { staffServer } from "@/lib/staff-server";
 import { capsFor, STEP_UP, STEP_UP_MAX_AGE_MS, type Cap, type Role } from "./permissions";
 import { redact, writeAudit, type AuditInput } from "./audit";
 
@@ -11,7 +13,7 @@ export type Staff = {
   grants: string[];
   caps: Set<Cap>;
   version: number;
-  /** ms epoch of the last password/OAuth/MFA sign-in, used for step-up */
+  /** ms epoch of the last password or second-factor sign-in of THIS staff session, used for step-up */
   signedInAt: number;
 };
 
@@ -26,24 +28,24 @@ export type StaffState =
 /** MFA is required for all staff unless explicitly disabled for a local stand-in run. Production must not set this. */
 const mfaRequired = () => process.env.STAFF_MFA_REQUIRED !== "false";
 
-function jwtClaims(token: string | undefined): Record<string, unknown> {
-  try {
-    return JSON.parse(Buffer.from((token ?? "").split(".")[1] ?? "", "base64url").toString("utf8"));
-  } catch {
-    return {};
-  }
-}
-
 /** Resolve the caller's staff standing from the database on EVERY call (no cached roles, no client-supplied role). */
 export async function currentStaff(): Promise<StaffState> {
   await connection();
   if (!supabaseConfigured || !process.env.SUPABASE_SERVICE_ROLE_KEY) return { status: "unavailable", reason: "not_configured" };
-  const sb = await supabaseServer();
+  // The STAFF session only. A customer session (password or Google) lives in a different cookie and is never consulted here.
+  const sb = await staffServer();
   const {
     data: { user },
   } = await sb.auth.getUser();
   if (!user?.email) return { status: "anonymous" };
   const email = user.email.toLowerCase();
+  // The access token below was just verified by getUser(); its method claims are therefore trustworthy.
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  const claims = claimsOf(session?.access_token);
+  // Server-side check of HOW this session was established: staff access requires a password sign-in.
+  if (!hasPasswordLogin(claims.amr)) return { status: "anonymous" };
 
   const { data: row, error } = await supabaseAdmin()
     .from("staff_members")
@@ -62,11 +64,7 @@ export async function currentStaff(): Promise<StaffState> {
   }
   if (row.state !== "active") return { status: "revoked", email };
 
-  const {
-    data: { session },
-  } = await sb.auth.getSession();
-  const aal = jwtClaims(session?.access_token).aal;
-  if (mfaRequired() && aal !== "aal2") return { status: "needs_mfa", email };
+  if (mfaRequired() && claims.aal !== "aal2") return { status: "needs_mfa", email };
 
   const grants = (row.extra_grants as string[]) ?? [];
   return {
@@ -78,7 +76,7 @@ export async function currentStaff(): Promise<StaffState> {
       grants,
       caps: capsFor(row.role as Role, grants),
       version: row.version as number,
-      signedInAt: user.last_sign_in_at ? new Date(user.last_sign_in_at).getTime() : 0,
+      signedInAt: lastAuthAt(claims.amr),
     },
   };
 }

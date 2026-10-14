@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { forbidden, rateLimit, readJson, sameOrigin } from "@/lib/request-guards";
-import { supabaseAdmin, supabaseServer } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { claimsOf, hasPasswordLogin } from "@/lib/staff-auth";
+import { staffServer } from "@/lib/staff-server";
 import { writeAudit } from "@/lib/admin/audit";
 import { adm } from "@/lib/admin/db";
 import type { Role } from "@/lib/admin/permissions";
@@ -20,9 +22,11 @@ export async function POST(req: Request) {
   const parsed = await readJson(req, 2000);
   const token = parsed && "body" in parsed ? (parsed.body as { token?: unknown })?.token : null;
   if (typeof token !== "string" || token.length < 20 || token.length > 100) return Response.json({ error: MESSAGE.invalid[1], code: "invalid" }, { status: 404 });
-  const sb = await supabaseServer();
+  const sb = await staffServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user?.email || !user.email_confirmed_at) return Response.json({ error: "Sign in first." }, { status: 401 });
+  const { data: { session } } = await sb.auth.getSession();
+  if (!hasPasswordLogin(claimsOf(session?.access_token).amr)) return Response.json({ error: "Sign in with your staff password first." }, { status: 401 });
   const hash = createHash("sha256").update(token).digest("hex");
   const { data, error } = await supabaseAdmin().rpc("accept_invite", { p_token_hash: hash, p_user: user.id, p_email: user.email });
   if (error) return Response.json({ error: "Management is not available yet." }, { status: 503 });

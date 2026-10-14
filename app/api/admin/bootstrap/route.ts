@@ -1,20 +1,25 @@
 import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
-import { supabaseAdmin, supabaseServer } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { claimsOf, hasPasswordLogin } from "@/lib/staff-auth";
+import { staffServer } from "@/lib/staff-server";
 import { writeAudit } from "@/lib/admin/audit";
 
 const no = (status: number, error: string) => Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 
 /**
- * Claim the first Owner seat. Requires ALL of: the caller is signed in with a confirmed email, that email equals the
+ * Claim the first Owner seat. Requires ALL of: the caller is signed in to the staff session by password with a confirmed email, that email equals the
  * server-side OWNER_BOOTSTRAP_EMAIL, and no staff exist yet (enforced atomically in the database).
  */
 export async function POST(req: Request) {
   if (!sameOrigin(req)) return forbidden();
   const limited = rateLimit(req, "admin-bootstrap", 5);
   if (limited) return limited;
-  const sb = await supabaseServer();
+  const sb = await staffServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user?.email) return no(401, "Sign in first.");
+  // Only a staff-flow password sign-in may claim the seat: not Google, not a magic or recovery link.
+  const { data: { session } } = await sb.auth.getSession();
+  if (!hasPasswordLogin(claimsOf(session?.access_token).amr)) return no(403, "This account cannot set up management.");
   const owner = (process.env.OWNER_BOOTSTRAP_EMAIL ?? "").trim().toLowerCase();
   if (!owner || user.email.toLowerCase() !== owner || !user.email_confirmed_at) return no(403, "This account cannot set up management.");
   const { data, error } = await supabaseAdmin().rpc("bootstrap_owner", { p_user: user.id, p_email: user.email });

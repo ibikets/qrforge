@@ -19,6 +19,7 @@ const cookieFor = {
   billing: () => staffSession(IDS.billing, "billing@example.com"),
   editor: () => staffSession(IDS.editor, "editor@example.com"),
   revoked: () => staffSession(IDS.revoked, "former@example.com"),
+  invitee: () => staffSession("aaaaaaaa-0000-4000-8000-000000000099", "new.support@example.com"),
   nomfa: () => staffSession(IDS.owner, "owner@example.com", { aal: "aal1" }),
   stale: () => staffSession(IDS.owner, "owner@example.com", { lastSignIn: Date.now() - 30 * 60e3 }),
   cust: async () => { const c = sessionCookie(); return `${c.name}=${c.value}`; },
@@ -359,6 +360,19 @@ if (PHASE === "plain") {
     t("before/after with sensitive values redacted before storage", await has("Before", "After", "[redacted]", "Sensitive values were removed before this entry was saved") && !(await has("api_key\": \"sk")));
     t("reason, correlation id and target are shown", await has("Initial prices", "c-12", "plan_version"));
   });
+  S("staff-signin", "anon", "/admin", async ({ page, t, has }) => {
+    t("signed-out /admin opens the dedicated staff form", new URL(page.url()).pathname === "/admin/login" && await has("Staff sign-in", "Staff email", "Forgot password?"));
+    t("no Google or registration for staff", !(await has(/continue with google/i)) && !(await has(/create (an )?account/i)));
+  });
+  S("staff-forgot", "anon", "/admin/login/forgot", async ({ page, t, has }) => {
+    await page.getByLabel("Staff email").fill("nobody@example.com");
+    await page.getByRole("button", { name: "Send link" }).click();
+    await page.getByText("Check your email").waitFor();
+    t("neutral confirmation whoever asks", await has("Check your email", "If that address has management access"));
+  });
+  S("staff-reset-expired", "anon", "/admin/reset-password?state=expired", async ({ t, has }) => {
+    t("expired link explains and offers a new one", await has(/expired|different browser/i, "Ask for a new link"));
+  });
   S("staff-login", "nomfa", "/admin", async ({ page, t, has }) => {
     t("staff without a second step are asked for it before seeing anything", await has("Confirm it’s you") && !(await has("Needs attention")));
     t("management navigation is not rendered", (await page.getByRole("link", { name: "Customers" }).count()) === 0);
@@ -367,14 +381,14 @@ if (PHASE === "plain") {
     const r = await page.request.post(`${BASE}/api/admin/settings`, { data: { action: "set", key: "support_email", value: "x@example.com", reason: "testing step up" } });
     t("a sensitive action after 30 minutes asks to sign in again (reauth_required)", r.status() === 403 && (await r.json()).code === "reauth_required");
     await P_ctx.clearCookies();
-    await page.goto(`${BASE}/login?timeout=1&next=/admin`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE}/admin/login?timeout=1&next=/admin`, { waitUntil: "networkidle" });
     t("idle timeout notice names the reason and returns to management after sign-in", await has("You were signed out"));
   });
   S("staff-revoked", "revoked", "/admin", async ({ page, t, has }) => {
     t("revoked staff see an access-ended state and no data", await has(/access (has )?ended|no (longer )?access|No access|revoked/i) && !(await has("Needs attention")));
     t("no management navigation", (await page.getByRole("link", { name: "Payments" }).count()) === 0);
   });
-  S("invite-expired", "cust", "/staff-invite?token=expired-demo", async ({ t, has }) => {
+  S("invite-expired", "invitee", "/staff-invite?token=expired-demo", async ({ t, has }) => {
     t("expired invitation explains what to do, naming no one fictional", await has(/not valid|expired|no longer valid|invalid/i));
   }, { setup: () => seed({ rpc: { accept_invite: "expired" } }) });
   S("states", "billing", "/admin/staff", async ({ page, t, has }) => {

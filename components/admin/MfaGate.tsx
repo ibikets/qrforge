@@ -3,7 +3,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { controlClass } from "@/components/ui/Field";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { staffBrowser } from "@/lib/staff-auth";
+import StaffSignOutLink from "@/components/admin/StaffSignOutLink";
 
 type Mode = { kind: "loading" } | { kind: "verify"; factorId: string } | { kind: "enroll"; factorId: string; qr: string; secret: string } | { kind: "error"; message: string };
 
@@ -17,7 +18,7 @@ export default function MfaGate() {
 
   useEffect(() => {
     (async () => {
-      const sb = supabaseBrowser();
+      const sb = staffBrowser();
       const { data, error } = await sb.auth.mfa.listFactors();
       if (error) return setMode({ kind: "error", message: "Could not check your second factor. Reload to try again." });
       const verified = data.totp.find((f) => f.status === "verified");
@@ -40,7 +41,7 @@ export default function MfaGate() {
     }
     setBusy(true);
     setMsg(null);
-    const { error } = await supabaseBrowser().auth.mfa.challengeAndVerify({ factorId: mode.factorId, code: code.trim() });
+    const { error } = await staffBrowser().auth.mfa.challengeAndVerify({ factorId: mode.factorId, code: code.trim() });
     setBusy(false);
     if (error) {
       setMsg("That code was not accepted. Check the code and your phone’s clock, then try again.");
@@ -72,6 +73,7 @@ export default function MfaGate() {
           <Button type="submit" className="mt-5 w-full" disabled={busy}>{busy ? "Checking…" : mode.kind === "enroll" ? "Turn on and continue" : "Continue"}</Button>
         </form>
       ) : null}
+      <StaffSignOutLink />
     </div>
   );
 }

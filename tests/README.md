@@ -22,3 +22,5 @@ These run against local stand-ins, never real services. They are evidence of beh
 
 Stand-in app: `node tests/stand-ins/server.mjs` (Supabase on :54321, Paystack on :54322), then build and start with
 `NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=anon-mock SUPABASE_SERVICE_ROLE_KEY=svc-mock PAYSTACK_SECRET_KEY=sk_test_mock PAYSTACK_API_URL=http://localhost:54322 CRON_SECRET=cron-mock next build && next start -p 3200`.
+
+- `tests/e2e/staff-auth.mjs` (stand-in) and `tests/staff-auth.ts` (local): staff sign-in, separate staff session, method checks, recovery, expiry, logout, bootstrap. Needs the stand-in started with `OWNER_BOOTSTRAP_EMAIL=boot@example.com`; restart the app between runs to reset in-memory rate limits.

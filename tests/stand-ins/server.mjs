@@ -37,7 +37,7 @@ http.createServer(async (req, res) => {
   res.setHeader("access-control-expose-headers", "content-range");
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
   if (u.pathname === "/__ctl") { // control: GET state, POST merge
-    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.reset) { state.users = {}; state.tables = {}; state.rpc = {}; state.objects = {}; } if (b.users) Object.assign(state.users, b.users); if (b.tables) for (const [t, rows] of Object.entries(b.tables)) state.tables[t] = rows; if (b.rpc) Object.assign(state.rpc, b.rpc); if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
+    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.reset) { state.users = {}; state.creds = {}; state.tables = {}; state.rpc = {}; state.objects = {}; } if (b.users) Object.assign(state.users, b.users); if (b.creds) { state.creds ??= {}; Object.assign(state.creds, b.creds); } if (b.tables) for (const [t, rows] of Object.entries(b.tables)) state.tables[t] = rows; if (b.rpc) Object.assign(state.rpc, b.rpc); if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
     return json(res, 200, { ...state, user: undefined });
   }
   // Storage stand-in: keeps uploaded objects in memory so the page can show them. Not a model of Supabase Storage policy.
@@ -60,11 +60,25 @@ http.createServer(async (req, res) => {
     let sub = uid; try { sub = JSON.parse(Buffer.from((req.headers.authorization ?? "").split(".")[1] ?? "", "base64url").toString()).sub ?? uid; } catch {}
     return json(res, 200, state.users[sub] ?? state.user);
   }
+  if (u.pathname === "/auth/v1/admin/users" && req.method === "POST") { const cb = await body(req); state.log.push({ op: "auth_admin_create", email: cb?.email }); const exists = Object.values(state.users).some((x) => x.email === cb?.email); return exists ? json(res, 422, { code: 422, error_code: "email_exists", msg: "A user with this email address has already been registered" }) : json(res, 200, { id: "99999999-0000-4000-8000-000000000001", email: cb?.email }); }
   const au = /^\/auth\/v1\/admin\/users\/([^/]+)(\/.*)?$/.exec(u.pathname);
   if (au) { state.log.push({ op: "auth_admin", method: req.method, path: u.pathname }); const usr = state.users[au[1]] ?? (au[1] === uid ? state.user : null); if (!usr) return json(res, 404, { msg: "User not found" }); if (au[2] === "/factors") return json(res, 200, []); return json(res, 200, { user: usr, ...usr }); }
   if (u.pathname === "/auth/v1/logout") { res.writeHead(204); return res.end(); }
-  if (u.pathname === "/auth/v1/recover") { state.log.push({ op: "recover" }); return json(res, state.fail.recover ? 429 : 200, state.fail.recover ? { code: 429, error_code: "over_email_send_rate_limit", msg: "rate limit" } : {}); }
-  if (u.pathname === "/auth/v1/token") return json(res, 400, { error: "invalid_grant", error_description: "Invalid login credentials", error_code: "invalid_credentials", msg: "Invalid login credentials" });
+  if (u.pathname === "/auth/v1/recover") { const rb = await body(req); state.log.push({ op: "recover", email: rb?.email, redirect: u.searchParams.get("redirect_to") }); return json(res, state.fail.recover ? 429 : 200, state.fail.recover ? { code: 429, error_code: "over_email_send_rate_limit", msg: "rate limit" } : {}); }
+  if (u.pathname === "/auth/v1/token") {
+    // Password grant for configured credentials ({creds:{email:{password,id}}} via /__ctl). Anything else is a refusal.
+    const tb = await body(req);
+    const c = state.creds?.[String(tb?.email ?? "").toLowerCase()];
+    state.log.push({ op: "password_grant", email: tb?.email, ok: Boolean(c && c.password === tb?.password) });
+    if (tb && c && tb.password !== undefined && c.password === tb.password) {
+      const usr = state.users[c.id];
+      const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const exp = Math.floor(Date.now() / 1000) + 3600, now = Math.floor(Date.now() / 1000);
+      const jwt = [b64({ alg: "HS256", typ: "JWT" }), b64({ sub: c.id, exp, role: "authenticated", aal: "aal1", amr: [{ method: "password", timestamp: now }] }), "sig"].join(".");
+      return json(res, 200, { access_token: jwt, token_type: "bearer", expires_in: 3600, expires_at: exp, refresh_token: "r", user: usr });
+    }
+    return json(res, 400, { error: "invalid_grant", error_description: "Invalid login credentials", error_code: "invalid_credentials", msg: "Invalid login credentials" });
+  }
   if (u.pathname === "/auth/v1/signup") return json(res, 200, { id: "22222222-2222-4222-8222-222222222222", email: "new@example.com", identities: [{}], app_metadata: {}, user_metadata: {}, aud: "authenticated", created_at: new Date().toISOString() });
   if (u.pathname === "/auth/v1/resend") return json(res, 200, {});
   if (u.pathname === "/auth/v1/user" && req.method === "PUT") return json(res, state.fail.updateUser ? 422 : 200, state.fail.updateUser ? { code: 422, error_code: "same_password", msg: "New password should be different from the old password." } : state.user);

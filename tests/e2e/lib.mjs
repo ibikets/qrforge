@@ -24,11 +24,13 @@ export async function open({ width = 1440, height = 1000, signedIn = false, redu
 }
 export const sub = (plan, days, extra = {}) => ({ user_id: UID, plan, current_period_end: new Date(Date.now() + days * 864e5).toISOString(), auto_renew: false, authorization_code: null, ...extra });
 /** Session for any stand-in user. aal: "aal1"|"aal2"; lastSignIn: ms epoch (step-up clock). Registers the user in the stand-in. */
-export async function staffSession(id, email, { aal = "aal2", lastSignIn = Date.now(), extra = {} } = {}) {
+export const STAFF_COOKIE = "qrf-staff-auth";
+/** Staff-session cookie ("name=value"). methods: how the session was established (staff needs "password"); lastSignIn drives step-up. */
+export async function staffSession(id, email, { aal = "aal2", lastSignIn = Date.now(), extra = {}, methods = ["password", "totp"] } = {}) {
   const user = { id, aud: "authenticated", role: "authenticated", email, email_confirmed_at: "2026-01-01T00:00:00Z", last_sign_in_at: new Date(lastSignIn).toISOString(), app_metadata: { provider: "email", providers: ["email"] }, user_metadata: {}, created_at: "2026-01-01T00:00:00Z", ...extra };
   await ctl({ users: { [id]: user } });
   const exp = Math.floor(Date.now() / 1000) + 3600;
-  const jwt = [b64u(JSON.stringify({ alg: "HS256", typ: "JWT" })), b64u(JSON.stringify({ sub: id, exp, role: "authenticated", aal })), "sig"].join(".");
+  const jwt = [b64u(JSON.stringify({ alg: "HS256", typ: "JWT" })), b64u(JSON.stringify({ sub: id, exp, role: "authenticated", aal, amr: methods.map((method) => ({ method, timestamp: Math.floor(lastSignIn / 1000) })) })), "sig"].join(".");
   const session = { access_token: jwt, refresh_token: "r", expires_in: 3600, expires_at: exp, token_type: "bearer", user };
-  return "sb-localhost-auth-token=base64-" + b64u(JSON.stringify(session));
+  return STAFF_COOKIE + "=base64-" + b64u(JSON.stringify(session));
 }

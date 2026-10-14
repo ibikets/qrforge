@@ -199,3 +199,11 @@ Merging to `main` and a production deploy are **not** requested yet.
 | `tests/contact.ts` | Local | 41 pass |
 | `tests/e2e/contact-rows.mjs` | Stand-in | 78 pass |
 | `tsc`, ESLint | Local | 0 errors (17 warnings at last full run) |
+
+
+## 11. Staff authentication rebuild (14 Oct 2026)
+**Cause of the reported fault.** `/admin` reused the customer login: staff were an ordinary customer session plus a `staff_members` lookup. A Google sign-in could therefore reach the admin gate, and the gate answered "configure Owner rights" because (a) no staff row existed, (b) the Owner email `bitzpark@gmail.com` existed only as a Google account with no password and no second factor, and (c) `OWNER_BOOTSTRAP_EMAIL` had never been set. Nothing was wrong with the migrations.
+
+**Change.** A dedicated staff flow and a separate staff session (details and operations: `docs/OWNER_ACCESS.md`). Server-side method check (`amr` must show a password sign-in), MFA still enforced, step-up now measured from the staff session itself rather than the account's last sign-in anywhere, staff idle clock and logout independent of the customer session, recovery restricted to staff/invitees/the configured Owner email with identical answers, rate limits per account and per address.
+
+**Evidence (label: stand-in unless stated).** `tests/e2e/staff-auth.mjs` (about 100 checks: signed-out redirect, no Google/registration, wrong and customer credentials, customer/Google/wrong-method sessions refused on pages and every admin API, revoked, recovery eligibility, Owner bootstrap, idle expiry with safe return, independent logout, invitation flow, customer sign-in unchanged, 1440/390/320 axe and overflow, keyboard, throttling); `tests/staff-auth.ts` (local, helper logic); the earlier suites re-run green. **Not verified against real services:** the real email delivery, the Supabase redirect allow-list, TOTP enrolment against Supabase, and Owner activation: these need the Owner (see runbook).
