@@ -70,7 +70,7 @@ export async function seed(extra = {}) {
   const stats = { customers_total: 2, customers_new: 1, paid_accounts_active: 2, saved_codes_total: 9, tickets_open: 2, payments_confirmed: 1, gross_kobo: 280000, discount_kobo: 70000, redemptions_consumed: 1, refund_requests_open: 1, refunds_executed_kobo: 0, drafts_unpublished: 0 };
   await ctl({
     reset: true, users, tables,
-    push: { payments, subscriptions: [{ user_id: IDS.cust, plan: "business", current_period_end: day(20), auto_renew: true, authorization_code: null, renewal_kobo: 950000 }] },
+    push: { payments, subscriptions: extra.subscriptions ?? [{ user_id: IDS.cust, plan: "business", current_period_end: day(20), auto_renew: true, authorization_code: null, renewal_kobo: 950000 }] },
     rpc: { stats_summary: stats, payments_by_day: [{ day: new Date().toISOString().slice(0, 10), payments: 1, gross_kobo: 280000, discount_kobo: 70000 }], list_customers: customers, ...(extra.rpc ?? {}) },
   });
 }

@@ -13,8 +13,16 @@ await ctl({ reset: true });
   const am = page.getByRole("button", { name: "Account menu" }).first(); ok(await am.isVisible(), "round avatar button present");
   await am.click(); const menu = page.getByRole("menu", { name: "Account" });
   ok(await menu.isVisible() && /My account/.test(await menu.innerText()) && /Sign out/.test(await menu.innerText()), "avatar opens My account + Sign out");
+  const names = await menu.getByRole("menuitem").allInnerTexts();
+  ok(["My account", "Billing", "Sign out"].every((n) => names.some((x) => x.includes(n))), "menu has My account, Billing and Sign out (got: " + names.map((x) => x.trim()).join(" | ") + ")");
+  ok(await page.evaluate(() => document.activeElement?.getAttribute("role")) === "menuitem", "opening focuses the first item");
+  await page.keyboard.press("ArrowDown"); const f2 = await page.evaluate(() => document.activeElement?.textContent?.trim());
+  await page.keyboard.press("End"); const fe = await page.evaluate(() => document.activeElement?.textContent?.trim());
+  await page.keyboard.press("Home"); const fh = await page.evaluate(() => document.activeElement?.textContent?.trim());
+  ok(/Billing/.test(f2 ?? "") && /Sign out/.test(fe ?? "") && /My account/.test(fh ?? ""), "ArrowDown, End and Home move focus through the items (" + [f2, fe, fh].join(" / ") + ")");
   ok(await menu.getByRole("menuitem").evaluateAll((els) => els.every((e) => getComputedStyle(e).textDecorationLine === "none")), "menu items are not underlined");
   await page.keyboard.press("Escape"); ok(!(await menu.isVisible()), "Escape closes the menu");
+  ok(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")) === "Account menu", "focus returns to the avatar button");
   await page.getByRole("button", { name: "Menu" }).first().evaluate(() => {}).catch(() => {});
   // 2. /login redirects away when signed in, honours safe next only
   await page.goto(BASE + "/login"); ok(new URL(page.url()).pathname === "/create", "signed-in /login -> /create");

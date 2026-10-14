@@ -125,7 +125,7 @@ export default function PricingGrid({
                     included={PLAN_RANK[current] > PLAN_RANK[id]}
                   />
                 )}
-                {current === id ? (
+                {signedIn && current === id ? (
                   <p className="mt-2 text-sm text-muted">Your current plan</p>
                 ) : null}
               </div>
