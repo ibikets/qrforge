@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { siteOrigin } from "../lib/site";
+const req = new Request("https://qrenuvi-git-control-panel-x.vercel.app/api/paystack/initialize");
+const set = (e: Record<string, string | undefined>) => { for (const k of ["VERCEL_ENV", "NEXT_PUBLIC_SITE_URL"]) { if (e[k] === undefined) delete process.env[k]; else process.env[k] = e[k]; } };
+set({ VERCEL_ENV: "preview", NEXT_PUBLIC_SITE_URL: "https://prod.example" });
+assert.equal(siteOrigin(req), "https://qrenuvi-git-control-panel-x.vercel.app", "preview must not use the production URL");
+set({ VERCEL_ENV: "production", NEXT_PUBLIC_SITE_URL: "https://prod.example" });
+assert.equal(siteOrigin(req), "https://prod.example");
+set({ VERCEL_ENV: undefined, NEXT_PUBLIC_SITE_URL: undefined });
+assert.equal(siteOrigin(req), "https://qrenuvi-git-control-panel-x.vercel.app");
+console.log("PASS site origin: preview uses the request origin; production uses NEXT_PUBLIC_SITE_URL");

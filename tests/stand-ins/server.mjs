@@ -4,6 +4,9 @@ const uid = "11111111-1111-4111-8111-111111111111";
 const state = {
   user: { id: uid, aud: "authenticated", role: "authenticated", email: "tester@example.com", app_metadata: { provider: "email", providers: ["email"] }, user_metadata: {}, created_at: "2026-01-01T00:00:00Z" },
   qr_codes: [], subscriptions: [], payments: [],
+  users: {}, // id -> user, set through /__ctl {users:{...}}
+  tables: {}, // generic tables for the management portal, created on first use
+  rpc: {}, // function name -> canned result (or {__status, __body}); default null
   fail: {}, // e.g. { qr_codes_read: true, qr_codes_delete: true, qr_codes_write: true, subs_read: true }
   paystack: {}, // reference -> tx
   log: [],
@@ -34,10 +37,31 @@ http.createServer(async (req, res) => {
   res.setHeader("access-control-expose-headers", "content-range");
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
   if (u.pathname === "/__ctl") { // control: GET state, POST merge
-    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
+    if (req.method === "POST") { const b = await body(req); Object.assign(state, b.set ?? {}); if (b.reset) { state.qr_codes = []; state.subscriptions = []; state.payments = []; state.fail = {}; state.log = []; state.rpcMode = undefined; state.dbLimit = undefined; state.rpcCalls = 0; } if (b.reset) { state.users = {}; state.tables = {}; state.rpc = {}; state.objects = {}; } if (b.users) Object.assign(state.users, b.users); if (b.tables) for (const [t, rows] of Object.entries(b.tables)) state.tables[t] = rows; if (b.rpc) Object.assign(state.rpc, b.rpc); if (b.fail !== undefined) state.fail = b.fail; if (b.push) for (const [t, rows] of Object.entries(b.push)) state[t].push(...rows); }
     return json(res, 200, { ...state, user: undefined });
   }
-  if (u.pathname === "/auth/v1/user" && req.method === "GET") return json(res, 200, state.user);
+  // Storage stand-in: keeps uploaded objects in memory so the page can show them. Not a model of Supabase Storage policy.
+  const so = /^\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/.exec(u.pathname);
+  if (u.pathname.startsWith("/storage/v1/")) {
+    state.objects ??= {};
+    if (req.method === "GET" && so) { const o = state.objects[so[2]]; if (!o) return json(res, 404, { message: "not found" }); res.writeHead(200, { "content-type": o.type }); return res.end(o.data); }
+    if (state.fail.storage) { req.resume(); return json(res, 500, { message: "mock storage failure" }); }
+    if (req.method === "POST" && so) {
+      const chunks = []; for await (const c of req) chunks.push(c);
+      const raw = Buffer.concat(chunks); const ct = req.headers["content-type"] ?? "";
+      state.objects[decodeURIComponent(so[2])] = { type: ct.startsWith("multipart/") ? "application/octet-stream" : ct, data: raw };
+      state.log.push({ op: "storage_put", bucket: so[1], path: decodeURIComponent(so[2]), bytes: raw.length });
+      return json(res, 200, { Key: `${so[1]}/${so[2]}`, Id: crypto.randomUUID() });
+    }
+    if (req.method === "DELETE") { const b = await body(req); for (const p of b?.prefixes ?? []) delete state.objects[p]; state.log.push({ op: "storage_delete", prefixes: b?.prefixes }); return json(res, 200, []); }
+    return json(res, 404, {});
+  }
+  if (u.pathname === "/auth/v1/user" && req.method === "GET") {
+    let sub = uid; try { sub = JSON.parse(Buffer.from((req.headers.authorization ?? "").split(".")[1] ?? "", "base64url").toString()).sub ?? uid; } catch {}
+    return json(res, 200, state.users[sub] ?? state.user);
+  }
+  const au = /^\/auth\/v1\/admin\/users\/([^/]+)(\/.*)?$/.exec(u.pathname);
+  if (au) { state.log.push({ op: "auth_admin", method: req.method, path: u.pathname }); const usr = state.users[au[1]] ?? (au[1] === uid ? state.user : null); if (!usr) return json(res, 404, { msg: "User not found" }); if (au[2] === "/factors") return json(res, 200, []); return json(res, 200, { user: usr, ...usr }); }
   if (u.pathname === "/auth/v1/logout") { res.writeHead(204); return res.end(); }
   if (u.pathname === "/auth/v1/recover") { state.log.push({ op: "recover" }); return json(res, state.fail.recover ? 429 : 200, state.fail.recover ? { code: 429, error_code: "over_email_send_rate_limit", msg: "rate limit" } : {}); }
   if (u.pathname === "/auth/v1/token") return json(res, 400, { error: "invalid_grant", error_description: "Invalid login credentials", error_code: "invalid_credentials", msg: "Invalid login credentials" });
@@ -60,10 +84,20 @@ http.createServer(async (req, res) => {
     if (cur) Object.assign(cur, row); else state.subscriptions.push(row);
     return json(res, 200, base.toISOString());
   }
+  const rp = /^\/rest\/v1\/rpc\/(\w+)$/.exec(u.pathname);
+  if (rp && req.method === "POST") {
+    const a = await body(req); state.log.push({ op: "rpc", fn: rp[1], args: a });
+    const r = state.rpc[rp[1]];
+    if (r && typeof r === "object" && r.__status) return json(res, r.__status, r.__body ?? {});
+    return json(res, 200, r ?? null);
+  }
   const m = /^\/rest\/v1\/(\w+)$/.exec(u.pathname);
   if (!m) return json(res, 404, { message: "not found" });
   const table = m[1];
-  if (!state[table]) return json(res, 404, { message: "no table" });
+  const generic = !["qr_codes", "subscriptions", "payments"].includes(table);
+  if (generic) state.tables[table] ??= [];
+  if (!generic && !state[table]) return json(res, 404, { message: "no table" });
+  const T = () => (generic ? state.tables[table] : state[table]);
   const accept = req.headers.accept ?? "";
   const single = accept.includes("vnd.pgrst.object");
   const prefer = req.headers.prefer ?? "";
@@ -76,17 +110,19 @@ http.createServer(async (req, res) => {
   const failKey = { qr_codes: { GET: "qr_codes_read", HEAD: "qr_codes_read", DELETE: "qr_codes_delete", POST: "qr_codes_write", PATCH: "qr_codes_write" }, subscriptions: { GET: "subs_read" }, payments: { GET: "pay_read" } }[table]?.[req.method];
   if (failKey && state.fail[failKey]) return json(res, 500, { code: "XX000", message: "mock failure" });
   // RLS stand-in: everything belongs to the single test user
-  if (req.method === "GET" || req.method === "HEAD") return send(filterRows(state[table], u.searchParams));
+  if (req.method === "GET" || req.method === "HEAD") return send(filterRows(T(), u.searchParams));
   if (req.method === "POST") {
-    const b = await body(req); const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
+    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" } }; // column defaults the real database applies
+    const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ ...(DEFAULTS[table] ?? {}), id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
+    if (generic) { state.log.push({ op: "insert", table, rows }); }
     if (table === "payments" && rows.some((r) => state.payments.some((p) => p.reference === r.reference))) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
     if (table === "subscriptions") { /* upsert */ for (const r of rows) { const i = state.subscriptions.findIndex((x) => x.user_id === r.user_id); if (i >= 0) { Object.assign(state.subscriptions[i], r); } else state.subscriptions.push(r); } return send(rows, 201); }
     if (table === "qr_codes" && state.dbLimit != null && state.qr_codes.length >= state.dbLimit) return json(res, 400, { code: "QF001", message: "saved-code limit reached for plan free" });
     if (table === "qr_codes") { state.log.push({ op: "insert", n: state.qr_codes.length }); }
-    state[table].push(...rows); return send(rows, 201);
+    T().push(...rows); return send(rows, 201);
   }
-  if (req.method === "PATCH") { const b = await body(req); const hit = filterRows(state[table], u.searchParams); hit.forEach((r) => Object.assign(r, b)); return send(hit); }
-  if (req.method === "DELETE") { const hit = filterRows(state[table], u.searchParams); state[table] = state[table].filter((r) => !hit.includes(r)); return send(hit); }
+  if (req.method === "PATCH") { const b = await body(req); const hit = filterRows(T(), u.searchParams); hit.forEach((r) => Object.assign(r, b)); return send(hit); }
+  if (req.method === "DELETE") { const hit = filterRows(T(), u.searchParams); { const keep = T().filter((r) => !hit.includes(r)); if (generic) state.tables[table] = keep; else state[table] = keep; } return send(hit); }
   json(res, 405, {});
 }).listen(54321);
 

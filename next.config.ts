@@ -15,7 +15,7 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob: ${supabaseOrigin}`,
   "font-src 'self'",
   `connect-src 'self' ${supabaseOrigin}${isDev ? " ws: http://localhost:*" : ""}`,
   "object-src 'none'",

@@ -1,0 +1,22 @@
+// Webhook / callback history recorded by the app (stand-in Paystack and database; signature uses the stand-in test key).
+import { createHmac } from "node:crypto";
+import { BASE, ctl, tx, UID, sessionCookie } from "./lib.mjs";
+let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
+const KEY = "sk_test_mock";
+const hook = async (body, sig) => { const raw = JSON.stringify(body); const s = sig ?? createHmac("sha512", KEY).update(raw).digest("hex"); const r = await fetch(BASE + "/api/paystack/webhook", { method: "POST", headers: { "x-paystack-signature": s }, body: raw }); return r.status; };
+const events = async () => (await ctl()).log.filter((l) => l.op === "rpc" && l.fn === "record_payment_event").map((l) => l.args);
+await ctl({ reset: true, rpc: { apply_quoted_payment: null } });
+const ref = "qrf_webhook_demo_1";
+await tx(ref, { status: "success", amount: 350000, currency: "NGN", reference: ref, metadata: { user_id: UID, plan: "pro", auto_renew: false }, customer: { email: "tester@example.com" } });
+ok(await hook({ event: "charge.success", data: { reference: ref } }, "bad-signature") === 401, "bad signature -> 401");
+ok((await events()).length === 0, "…and nothing is recorded for it");
+await hook({ event: "charge.success", data: { reference: ref } });
+let ev = await events();
+ok(ev.length === 1 && ev[0].p_reference === ref && ev[0].p_source === "webhook" && ev[0].p_event === "charge.success", "valid webhook is recorded with its source and event name");
+await hook({ event: "transfer.success", data: { reference: ref } });
+ev = await events();
+ok(ev.at(-1).p_outcome === "ignored", "an event we do not act on is recorded as ignored");
+await tx("qrf_flaky", { __fail: true });
+await hook({ event: "charge.success", data: { reference: "qrf_flaky" } });
+ok((await events()).at(-1).p_outcome === "retry_requested", "a transient provider failure is recorded as a retry request (webhook answered 503)");
+console.log(bad ? `${bad} FAILED` : "ALL PASS"); process.exit(bad ? 1 : 0);

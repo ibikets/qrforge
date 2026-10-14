@@ -1,56 +1,106 @@
 "use client";
 
-import { useState } from "react";
 import { PLANS, PLAN_RANK, formatNaira, type PlanId } from "@/lib/plans";
 import { LinkButton } from "@/components/ui/Button";
-import { Notice } from "@/components/ui/Notice";
 import UpgradeButton from "./UpgradeButton";
 
+export type PricingView = {
+  id: "pro" | "business";
+  baseKobo: number;
+  firstKobo: number;
+  offerText?: string;
+  audience?: "any" | "new_paid";
+};
+
 const rows: [string, (id: PlanId) => string][] = [
-  ["QR types", (id) => (PLANS[id].types === "all" ? "All 8 types" : "Website, text, email")],
-  ["Downloads", (id) => PLANS[id].formats.map((f) => f.toUpperCase()).join(", ")],
+  [
+    "QR types",
+    (id) =>
+      PLANS[id].types === "all" ? "All 8 types" : "Website, text, email",
+  ],
+  [
+    "Downloads",
+    (id) => PLANS[id].formats.map((f) => f.toUpperCase()).join(", "),
+  ],
   ["Centre logo", (id) => (PLANS[id].logo ? "Yes" : "No")],
   ["Largest file", (id) => `${PLANS[id].maxSize.toLocaleString("en-US")} px`],
   ["Saved codes", (id) => PLANS[id].maxSaved.toLocaleString("en-US")],
 ];
 
-export default function PricingGrid({ current, signedIn }: { current: PlanId; signedIn: boolean }) {
-  // Default stays checked (existing behaviour) until the owner decides otherwise.
-  const [autoRenew, setAutoRenew] = useState(true);
+export default function PricingGrid({
+  current,
+  signedIn,
+  prices,
+}: {
+  current: PlanId;
+  signedIn: boolean;
+  prices: PricingView[];
+}) {
   const ids = Object.keys(PLANS) as PlanId[];
+  const view = (id: PlanId) => prices.find((p) => p.id === id);
   return (
     <>
-      <div className="my-8 max-w-[720px]">
-        <label className="flex items-start gap-3 rounded-panel bg-surface p-4">
-          <input type="checkbox" className="mt-0.5 size-6 shrink-0" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />
-          <span>
-            <strong>Renew automatically every 30 days.</strong> I authorise Qrenuvi to charge the card I pay with at each renewal, at the plan price shown. I
-            can cancel anytime from Billing. (Card payments only.)
-          </span>
-        </label>
-        <div role="status" aria-live="polite">
-          {autoRenew ? (
-            <Notice title="Card payments for auto-renewal">Turn renewal off to pay with other available methods.</Notice>
-          ) : (
-            <Notice title="One-off 30-day pass">Auto-renewal is off. You will choose from the available payment methods at checkout.</Notice>
-          )}
-        </div>
-      </div>
+      <p className="my-8 max-w-[720px] text-muted">
+        You choose whether to renew automatically at checkout. Auto-renewal
+        charges the card you pay with, at the price shown there, and you can
+        cancel anytime from Billing.
+      </p>
 
       <div className="mb-10 grid gap-6 min-[900px]:grid-cols-3">
         {ids.map((id) => {
           const p = PLANS[id];
           const featured = id === "pro";
           return (
-            <section key={id} aria-labelledby={`plan-${id}`} className={`flex flex-col items-start gap-4 rounded-panel p-6 ${featured ? "bg-soft" : "bg-surface"}`}>
+            <section
+              key={id}
+              aria-labelledby={`plan-${id}`}
+              className={`flex flex-col items-start gap-4 rounded-panel p-6 ${featured ? "bg-soft" : "bg-surface"}`}
+            >
               <h2 id={`plan-${id}`} className="text-2xl font-medium">
                 {p.name}
               </h2>
               <p className="text-muted">{p.blurb}</p>
-              <p className="text-[28px] font-semibold leading-tight">
-                {p.priceNgn === 0 ? formatNaira(0) : formatNaira(p.priceNgn)}
-                {p.priceNgn > 0 ? <span className="text-base font-normal text-muted"> / 30 days</span> : null}
-              </p>
+              {(() => {
+                const v = view(id);
+                if (!v)
+                  return (
+                    <p className="text-[28px] font-semibold leading-tight">
+                      {formatNaira(0)}
+                    </p>
+                  );
+                const discounted = v.firstKobo < v.baseKobo;
+                return discounted ? (
+                  <div>
+                    <p className="text-[28px] font-semibold leading-tight">
+                      {formatNaira(v.firstKobo / 100)}{" "}
+                      <span className="text-base font-normal text-muted">
+                        for the first 30 days
+                      </span>
+                    </p>
+                    <p className="mt-1 text-sm text-muted">
+                      <s>{formatNaira(v.baseKobo / 100)}</s> normal price. Then{" "}
+                      {formatNaira(v.baseKobo / 100)} / 30 days if you renew.
+                    </p>
+                    {v.offerText ? (
+                      <p className="mt-2 text-[13px] text-brand">
+                        {v.offerText}.{" "}
+                        {v.audience === "new_paid"
+                          ? "For customers who have never paid. "
+                          : ""}
+                        First payment only.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-[28px] font-semibold leading-tight">
+                    {formatNaira(v.baseKobo / 100)}
+                    <span className="text-base font-normal text-muted">
+                      {" "}
+                      / 30 days
+                    </span>
+                  </p>
+                );
+              })()}
               <ul className="my-1 flex-1 list-disc pl-5">
                 {p.features.map((f) => (
                   <li key={f} className="my-2">
@@ -60,13 +110,24 @@ export default function PricingGrid({ current, signedIn }: { current: PlanId; si
               </ul>
               <div className="w-full">
                 {id === "free" ? (
-                  <LinkButton variant="secondary" href="/create" className="w-full">
+                  <LinkButton
+                    variant="secondary"
+                    href="/create"
+                    className="w-full"
+                  >
                     Create for free
                   </LinkButton>
                 ) : (
-                  <UpgradeButton plan={id} signedIn={signedIn} isCurrent={current === id} included={PLAN_RANK[current] > PLAN_RANK[id]} autoRenew={autoRenew} />
+                  <UpgradeButton
+                    plan={id}
+                    signedIn={signedIn}
+                    isCurrent={current === id}
+                    included={PLAN_RANK[current] > PLAN_RANK[id]}
+                  />
                 )}
-                {current === id ? <p className="mt-2 text-sm text-muted">Your current plan</p> : null}
+                {signedIn && current === id ? (
+                  <p className="mt-2 text-sm text-muted">Your current plan</p>
+                ) : null}
               </div>
             </section>
           );
@@ -74,7 +135,12 @@ export default function PricingGrid({ current, signedIn }: { current: PlanId; si
       </div>
 
       <h2 className="mb-4 text-2xl font-medium">Compare plans</h2>
-      <div className="mb-10 overflow-x-auto" tabIndex={0} role="region" aria-label="Plan comparison table">
+      <div
+        className="mb-10 overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Plan comparison table"
+      >
         <table className="w-full min-w-[520px] border-collapse text-left">
           <caption className="sr-only">Plan comparison</caption>
           <thead>

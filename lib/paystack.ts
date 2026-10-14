@@ -1,8 +1,10 @@
 import { PLANS, PAID_PLANS, type PlanId } from "./plans";
+import { knownPlanPricesKobo } from "./pricing";
 import { supabaseAdmin } from "./supabase";
 
 // overridable only so the integration can be exercised against a local stand-in in tests
-export const PAYSTACK_API = process.env.PAYSTACK_API_URL ?? "https://api.paystack.co";
+export const PAYSTACK_API =
+  process.env.PAYSTACK_API_URL ?? "https://api.paystack.co";
 const API = PAYSTACK_API;
 const PERIOD_DAYS = 30;
 const MAX_FAILURES = 3;
@@ -25,6 +27,9 @@ export type Activation = {
   userId?: string;
   /** actual paid-until timestamp read back from the subscription row */
   periodEnd?: string;
+  /** what was actually charged, and what an offer saved, when the payment came from a quote */
+  paidKobo?: number;
+  savedKobo?: number;
   /** true when a retry could succeed (network/database error): webhooks should answer non-2xx */
   transient?: boolean;
 };
@@ -32,17 +37,24 @@ export type Activation = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PENDING_STATES = new Set(["pending", "ongoing", "processing", "queued"]);
 
-export async function activateFromReference(reference: string): Promise<Activation> {
+export async function activateFromReference(
+  reference: string,
+): Promise<Activation> {
   let json;
   try {
-    const res = await fetch(`${API}/transaction/verify/${encodeURIComponent(reference)}`, {
-      headers: paystackHeaders(),
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `${API}/transaction/verify/${encodeURIComponent(reference)}`,
+      {
+        headers: paystackHeaders(),
+        cache: "no-store",
+      },
+    );
     json = await res.json();
     if (!res.ok || !json.status) {
       // Paystack unknown reference is a definite failure; anything else we cannot tell yet
-      return res.status === 404 ? { ok: false, state: "failed" } : { ok: false, state: "pending", transient: true };
+      return res.status === 404
+        ? { ok: false, state: "failed" }
+        : { ok: false, state: "pending", transient: true };
     }
   } catch {
     return { ok: false, state: "pending", transient: true };
@@ -53,14 +65,72 @@ export async function activateFromReference(reference: string): Promise<Activati
 
   const userId: string | undefined = tx.metadata?.user_id;
   const plan = tx.metadata?.plan as PlanId | undefined;
-  if (!userId || !UUID.test(userId) || !plan || !PAID_PLANS.includes(plan)) return { ok: false, state: "failed" };
-  // never trust metadata alone: the amount paid must match the plan price
-  if (tx.amount !== PLANS[plan].priceNgn * 100 || tx.currency !== "NGN") return { ok: false, state: "failed" };
+  if (!userId || !UUID.test(userId) || !plan || !PAID_PLANS.includes(plan))
+    return { ok: false, state: "failed" };
+  if (tx.currency !== "NGN" || !Number.isInteger(tx.amount))
+    return { ok: false, state: "failed" };
 
   const db = supabaseAdmin();
-  const authCode = tx.authorization?.reusable && tx.authorization?.authorization_code ? (tx.authorization.authorization_code as string) : null;
+  const authCode =
+    tx.authorization?.reusable && tx.authorization?.authorization_code
+      ? (tx.authorization.authorization_code as string)
+      : null;
   // The renewal preference is only set by a person paying, never by an automatic renewal charge.
-  const autoRenew = !tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean" ? (tx.metadata.auto_renew as boolean) : null;
+  const autoRenew =
+    !tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean"
+      ? (tx.metadata.auto_renew as boolean)
+      : null;
+
+  // Quoted payment: the database compares the amount with the quote it issued and applies payment, subscription and
+  // redemption in one transaction. A different amount (or an unknown quote) grants nothing.
+  const quoteId =
+    !tx.metadata?.renewal && typeof tx.metadata?.quote_id === "string"
+      ? (tx.metadata.quote_id as string)
+      : null;
+  if (quoteId && UUID.test(quoteId)) {
+    try {
+      const { data: end, error } = await db.rpc("apply_quoted_payment", {
+        p_reference: reference,
+        p_amount: tx.amount,
+        p_authorization_code: authCode,
+        p_customer_email: authCode ? (tx.customer?.email ?? null) : null,
+      });
+      if (error) {
+        if (/QF02[23]/.test(error.message) || error.code === "23503")
+          return { ok: false, state: "failed" };
+        return { ok: false, state: "pending", transient: true };
+      }
+      const { data: pay } = await db
+        .from("payments")
+        .select("amount_kobo,discount_kobo")
+        .eq("reference", reference)
+        .maybeSingle();
+      return {
+        ok: true,
+        state: "confirmed",
+        plan,
+        userId,
+        periodEnd: end ? new Date(end as string).toISOString() : undefined,
+        paidKobo: pay?.amount_kobo ?? tx.amount,
+        savedKobo: pay?.discount_kobo ?? 0,
+      };
+    } catch {
+      return { ok: false, state: "pending", transient: true };
+    }
+  }
+
+  // No quote: a plain plan price or an automatic renewal. Never trust metadata alone: the amount must be a price this plan has had,
+  // or (for renewals) the price the customer agreed to.
+  const allowed = await knownPlanPricesKobo(plan);
+  if (tx.metadata?.renewal) {
+    const { data: s } = await db
+      .from("subscriptions")
+      .select("renewal_kobo")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (s?.renewal_kobo) allowed.add(s.renewal_kobo as number);
+  }
+  if (!allowed.has(tx.amount)) return { ok: false, state: "failed" };
 
   // Preferred path: one database transaction applies the payment row and the subscription together, serialised per user.
   try {
@@ -74,9 +144,17 @@ export async function activateFromReference(reference: string): Promise<Activati
       p_auto_renew: autoRenew,
       p_days: PERIOD_DAYS,
     });
-    if (!error) return { ok: true, state: "confirmed", plan, userId, periodEnd: end ? new Date(end as string).toISOString() : undefined };
+    if (!error)
+      return {
+        ok: true,
+        state: "confirmed",
+        plan,
+        userId,
+        periodEnd: end ? new Date(end as string).toISOString() : undefined,
+      };
     if (error.code === "23503") return { ok: false, state: "failed" }; // metadata names a user that does not exist: retrying cannot help
-    if (error.code !== "PGRST202") return { ok: false, state: "pending", transient: true };
+    if (error.code !== "PGRST202")
+      return { ok: false, state: "pending", transient: true };
     // PGRST202: migration not applied yet, fall through to the previous (non-atomic) path
   } catch {
     return { ok: false, state: "pending", transient: true };
@@ -85,11 +163,25 @@ export async function activateFromReference(reference: string): Promise<Activati
 }
 
 /** Pre-migration behaviour, kept so the app works whichever order the migration and deployment happen in. */
-type Tx = { amount: number; customer?: { email?: string }; authorization?: { reusable?: boolean; authorization_code?: string }; metadata?: Record<string, unknown> };
-async function legacyApply(reference: string, tx: Tx, userId: string, plan: PlanId): Promise<Activation> {
+type Tx = {
+  amount: number;
+  customer?: { email?: string };
+  authorization?: { reusable?: boolean; authorization_code?: string };
+  metadata?: Record<string, unknown>;
+};
+async function legacyApply(
+  reference: string,
+  tx: Tx,
+  userId: string,
+  plan: PlanId,
+): Promise<Activation> {
   const db = supabaseAdmin();
   const periodEnd = async () => {
-    const { data } = await db.from("subscriptions").select("current_period_end").eq("user_id", userId).maybeSingle();
+    const { data } = await db
+      .from("subscriptions")
+      .select("current_period_end")
+      .eq("user_id", userId)
+      .maybeSingle();
     return data?.current_period_end as string | undefined;
   };
 
@@ -103,7 +195,14 @@ async function legacyApply(reference: string, tx: Tx, userId: string, plan: Plan
       status: "success",
     });
     if (claimErr) {
-      if (claimErr.code === "23505") return { ok: true, state: "confirmed", plan, userId, periodEnd: await periodEnd() };
+      if (claimErr.code === "23505")
+        return {
+          ok: true,
+          state: "confirmed",
+          plan,
+          userId,
+          periodEnd: await periodEnd(),
+        };
       if (claimErr.code === "23503") return { ok: false, state: "failed" }; // unknown user in metadata: retrying cannot help
       return { ok: false, state: "pending", transient: true };
     }
@@ -114,7 +213,9 @@ async function legacyApply(reference: string, tx: Tx, userId: string, plan: Plan
       .eq("user_id", userId)
       .maybeSingle();
     const base =
-      current && new Date(current.current_period_end) > new Date() ? new Date(current.current_period_end) : new Date();
+      current && new Date(current.current_period_end) > new Date()
+        ? new Date(current.current_period_end)
+        : new Date();
     base.setDate(base.getDate() + PERIOD_DAYS);
 
     const row: Record<string, unknown> = {
@@ -131,14 +232,21 @@ async function legacyApply(reference: string, tx: Tx, userId: string, plan: Plan
       row.customer_email = tx.customer?.email;
     }
     // The renewal preference is only set by a person paying, never by an automatic renewal charge.
-    if (!tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean") row.auto_renew = tx.metadata.auto_renew;
+    if (!tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean")
+      row.auto_renew = tx.metadata.auto_renew;
 
     const { error } = await db.from("subscriptions").upsert(row);
     if (error) {
       await db.from("payments").delete().eq("reference", reference); // let a retry apply it
       return { ok: false, state: "pending", transient: true };
     }
-    return { ok: true, state: "confirmed", plan, userId, periodEnd: base.toISOString() };
+    return {
+      ok: true,
+      state: "confirmed",
+      plan,
+      userId,
+      periodEnd: base.toISOString(),
+    };
   } catch {
     return { ok: false, state: "pending", transient: true };
   }
@@ -149,23 +257,52 @@ export async function renewDueSubscriptions() {
   const db = supabaseAdmin();
   const now = Date.now();
   const horizon = new Date(now + 24 * 3600_000).toISOString();
-  const { data: due, error } = await db
-    .from("subscriptions")
-    .select("user_id, plan, current_period_end, authorization_code, customer_email, failed_attempts")
-    .eq("auto_renew", true)
-    .not("authorization_code", "is", null)
-    .lte("current_period_end", horizon)
-    .lt("failed_attempts", MAX_FAILURES)
-    .limit(100);
-  if (error) throw new Error(error.message);
+  const dueQuery = (cols: string) =>
+    db
+      .from("subscriptions")
+      .select(cols)
+      .eq("auto_renew", true)
+      .not("authorization_code", "is", null)
+      .lte("current_period_end", horizon)
+      .lt("failed_attempts", MAX_FAILURES)
+      .limit(100);
+  // renewal_kobo (the agreed renewal price) exists once the offers migration is applied; before that, plan prices apply.
+  let res = await dueQuery(
+    "user_id, plan, current_period_end, authorization_code, customer_email, failed_attempts, renewal_kobo",
+  );
+  if (res.error?.code === "42703")
+    res = await dueQuery(
+      "user_id, plan, current_period_end, authorization_code, customer_email, failed_attempts",
+    );
+  if (res.error) throw new Error(res.error.message);
+  const due = res.data as unknown as
+    | {
+        user_id: string;
+        plan: string;
+        current_period_end: string;
+        authorization_code: string;
+        customer_email: string;
+        failed_attempts: number;
+        renewal_kobo?: number | null;
+      }[]
+    | null;
 
-  const summary = { checked: due?.length ?? 0, renewed: 0, failed: 0, pending: 0, lapsed: 0 };
+  const summary = {
+    checked: due?.length ?? 0,
+    renewed: 0,
+    failed: 0,
+    pending: 0,
+    lapsed: 0,
+  };
 
   for (const sub of due ?? []) {
     const plan = sub.plan as PlanId;
     // long-lapsed subscriptions are not silently revived
     if (new Date(sub.current_period_end).getTime() < now - 7 * 24 * 3600_000) {
-      await db.from("subscriptions").update({ auto_renew: false }).eq("user_id", sub.user_id);
+      await db
+        .from("subscriptions")
+        .update({ auto_renew: false })
+        .eq("user_id", sub.user_id);
       summary.lapsed++;
       continue;
     }
@@ -179,7 +316,8 @@ export async function renewDueSubscriptions() {
       body: JSON.stringify({
         authorization_code: sub.authorization_code,
         email: sub.customer_email,
-        amount: PLANS[plan].priceNgn * 100,
+        // the full price agreed at checkout; an introductory offer never carries over to renewals
+        amount: sub.renewal_kobo ?? PLANS[plan].priceNgn * 100,
         currency: "NGN",
         reference,
         metadata: { user_id: sub.user_id, plan, renewal: true },
@@ -208,4 +346,13 @@ export async function renewDueSubscriptions() {
     }
   }
   return summary;
+}
+
+/** Best-effort history for the management screen. Never throws and never changes what the customer or Paystack sees. */
+export async function recordPaymentEvent(reference: string, source: "callback" | "webhook", outcome: "confirmed" | "pending" | "failed" | "retry_requested" | "ignored", event?: string) {
+  try {
+    await supabaseAdmin().rpc("record_payment_event", { p_reference: reference, p_source: source, p_outcome: outcome, p_event: event ?? null });
+  } catch {
+    /* history only */
+  }
 }

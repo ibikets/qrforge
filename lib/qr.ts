@@ -1,3 +1,5 @@
+import { emailType, rowsOf, socialUrl, telType, vEsc, vcardKeys } from "@/lib/qr-contact";
+
 export type QrType =
   | "url"
   | "text"
@@ -58,20 +60,25 @@ export function buildPayload(type: QrType, f: Fields): string {
     }
     case "vcard": {
       if (!f.firstName && !f.lastName) return "";
-      return [
+      const lines = [
         "BEGIN:VCARD",
         "VERSION:3.0",
-        `N:${f.lastName ?? ""};${f.firstName ?? ""};;;`,
-        `FN:${[f.firstName, f.lastName].filter(Boolean).join(" ")}`,
-        f.org ? `ORG:${f.org}` : "",
-        f.title ? `TITLE:${f.title}` : "",
-        f.phone ? `TEL;TYPE=CELL:${f.phone}` : "",
-        f.email ? `EMAIL:${f.email}` : "",
-        f.website ? `URL:${f.website}` : "",
-        "END:VCARD",
-      ]
-        .filter(Boolean)
-        .join("\n");
+        `N:${vEsc(f.lastName ?? "")};${vEsc(f.firstName ?? "")};;;`,
+        `FN:${vEsc([f.firstName, f.lastName].filter(Boolean).join(" "))}`,
+        f.org ? `ORG:${vEsc(f.org)}` : "",
+        f.title ? `TITLE:${vEsc(f.title)}` : "",
+      ];
+      // Repeated TEL / EMAIL / URL properties are standard in vCard 3.0 (RFC 2426). Empty rows are skipped.
+      for (const r of rowsOf(f, "phone")) if (r.value.trim()) lines.push(`TEL;TYPE=${telType(r.type)}:${r.value.trim()}`);
+      for (const r of rowsOf(f, "email")) if (r.value.trim()) lines.push(`EMAIL;TYPE=${emailType(r.type)}:${r.value.trim()}`);
+      for (const r of rowsOf(f, "website")) if (r.value.trim()) lines.push(`URL:${/^[a-z][a-z0-9+.-]*:/i.test(r.value.trim()) ? r.value.trim() : `https://${r.value.trim()}`}`);
+      // Social profiles are written as plain URL properties: every contacts app reads those, unlike X-SOCIALPROFILE.
+      for (const r of rowsOf(f, "social")) {
+        const u = socialUrl(r.type, r.value);
+        if (u) lines.push(`URL:${u}`);
+      }
+      lines.push("END:VCARD");
+      return lines.filter(Boolean).join("\n");
     }
   }
 }
@@ -103,13 +110,16 @@ export const FIELD_DEFS: Record<
     { key: "encryption", label: "Security", kind: "select", options: ["WPA", "WEP", "nopass"] },
     { key: "hidden", label: "Hidden network", kind: "checkbox" },
   ],
+  // Phone, email, website and social rows are repeatable and live in lib/qr-contact.ts
   vcard: [
     { key: "firstName", label: "First name" },
     { key: "lastName", label: "Last name" },
     { key: "org", label: "Company" },
     { key: "title", label: "Job title" },
-    { key: "phone", label: "Phone" },
-    { key: "email", label: "Email" },
-    { key: "website", label: "Website" },
   ],
 };
+
+/** Keys a saved record of this type may carry (drops anything else before saving). */
+export function allowedKeys(type: QrType): Set<string> {
+  return type === "vcard" ? vcardKeys() : new Set(FIELD_DEFS[type].map((d) => d.key));
+}

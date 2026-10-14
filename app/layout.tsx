@@ -3,8 +3,9 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 import "./globals.css";
 import AuthNav from "@/components/AuthNav";
-import NavShell from "@/components/NavShell";
+import NavFallback from "@/components/NavFallback";
 import SiteFooter from "@/components/SiteFooter";
+import PublicFooter from "@/components/PublicFooter";
 
 const plex = localFont({
   src: "./fonts/IBMPlexSans-variable.woff2",
@@ -13,7 +14,7 @@ const plex = localFont({
   display: "swap",
 });
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL;
+const SITE = process.env.VERCEL_ENV === "preview" && process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : process.env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
   ...(SITE ? { metadataBase: new URL(SITE) } : {}),
@@ -46,14 +47,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <Suspense fallback={<NavShell email={undefined} />}>
+        <Suspense fallback={<NavFallback />}>
           <AuthNav />
         </Suspense>
         <div className="shell-main flex min-h-dvh flex-col">
           <main id="main" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
-          <SiteFooter />
+          <Suspense fallback={null}>
+            <PublicFooter>
+              <SiteFooter />
+            </PublicFooter>
+          </Suspense>
         </div>
       </body>
     </html>

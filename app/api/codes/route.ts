@@ -1,5 +1,5 @@
 import { PLANS } from "@/lib/plans";
-import { FIELD_DEFS, QR_TYPES, type QrType } from "@/lib/qr";
+import { QR_TYPES, allowedKeys, type QrType } from "@/lib/qr";
 import { validateContent } from "@/lib/qr-validation";
 import { sanitizeStyle } from "@/lib/qr-render";
 import { getSession, supabaseServer } from "@/lib/supabase";
@@ -46,7 +46,8 @@ export async function POST(req: Request) {
 
   // keep only the keys this type defines
   const fields: Record<string, string> = {};
-  for (const d of FIELD_DEFS[type as QrType]) if (typeof rawFields[d.key] === "string") fields[d.key] = rawFields[d.key];
+  const allowed = allowedKeys(type as QrType);
+  for (const k of Object.keys(rawFields)) if (allowed.has(k) && typeof rawFields[k] === "string") fields[k] = rawFields[k];
   const v = validateContent(type as QrType, fields);
   if (!v.ok) return Response.json({ error: v.errors[v.first], field: v.first }, { status: 400 });
   if (JSON.stringify(fields).length > 20_000) return Response.json({ error: "Too much data" }, { status: 413 });
