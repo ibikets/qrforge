@@ -36,8 +36,8 @@ Hosted cards are live only after the migration `20261016000000_hosted_pages.sql`
 Chosen from the design's recommendation, to be confirmed by the Owner; it is implemented, not just described:
 
 - **Active Pro/Business plan:** create, edit, publish, restore, replace images. Within the plan's page and storage limits.
-- **Plan lapses (no renewal):** published pages **stay publicly visible for 30 days** (grace). During grace the owner can still unpublish or delete, but cannot create, edit, upload or publish (read-only). Renewing restores everything.
-- **After 30 days without renewal:** public address shows the neutral "This page isn't available" page (also images and the contact file). Nothing is deleted: renewing makes the page public again. There is no automatic deletion in this release; a retention/deletion rule and a "your page is about to go offline" email require the email provider (not configured) and an Owner decision.
+- **Plan lapses (no renewal):** published pages **stay publicly visible for 7 days** (grace; Owner-confirmed 2026-10-14). During grace the owner can still unpublish or delete, but cannot create, edit, upload or publish (read-only). Renewing restores everything.
+- **After 7 days without renewal:** public address shows the neutral "This page isn't available" page (also images and the contact file). Nothing is deleted: renewing makes the page public again. There is no automatic deletion in this release; a retention/deletion rule and a "your page is about to go offline" email require the email provider (not configured) and an Owner decision.
 - **Downgrade to Free** behaves the same as lapse.
 - **Unpublish:** immediate; record and revisions kept. **Takedown (staff abuse action):** immediate, blocks republishing, audited with reason; Support and Owner only; staff see title, status and address, never content.
 - **Static codes** keep their existing behaviour; they do not depend on these rules.
@@ -72,7 +72,7 @@ Phases 3 to 7 reuse: `pages` (add kinds to the `kind` check and a validator per 
 ## 7. Required owner actions
 
 1. Owner activation (password, MFA) at `/admin/login/forgot`.
-2. Confirm the lifecycle policy in section 3 (30-day grace; no auto-deletion).
+2. Confirm the lifecycle policy in section 3 (7-day grace, confirmed; no auto-deletion).
 3. Decide Pro/Business page limits (5/25) and add the pricing copy line when satisfied.
 4. Add `https://<production host>/admin/auth/callback` to the Supabase Auth redirect allow-list if staff recovery emails do not land (unverified).
 5. A support email address and email provider (needed for notifications, expiry warnings, form alerts).

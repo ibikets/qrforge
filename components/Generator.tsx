@@ -41,6 +41,7 @@ export default function Generator({
   draftId,
   savedCount,
   loadProblem,
+  justSaved = false,
 }: {
   plan: PlanId;
   signedIn?: boolean;
@@ -48,6 +49,7 @@ export default function Generator({
   draftId?: string;
   savedCount?: number | null;
   loadProblem?: "not-found" | "error" | null;
+  justSaved?: boolean;
 }) {
   const router = useRouter();
   const caps = PLANS[plan]; // UI hints only; every limit is enforced again on the server
@@ -68,7 +70,7 @@ export default function Generator({
   const [attempted, setAttempted] = useState(false);
   const [dl, setDl] = useState<DlState>({ state: "idle", msg: "" });
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [saveMsg, setSaveMsg] = useState<{ kind: "ok" | "error" | "limit"; text: string } | null>(null);
+  const [saveMsg, setSaveMsg] = useState<{ kind: "ok" | "error" | "limit"; text: string } | null>(justSaved ? { kind: "ok", text: "Saved to My codes. You can return to this code later. Changes require a new download." } : null);
   const [savedId, setSavedId] = useState<string | undefined>(initial?.id);
   const [snap, setSnap] = useState<string | null>(() =>
     initial
@@ -292,11 +294,16 @@ export default function Generator({
         if (j.field === "name") return setNameError(j.error);
         return setSaveMsg({ kind: "error", text: j.error ?? "Your draft is still here. Try again." });
       }
+      clearDraft();
+      if (!savedId) {
+        // First save: move to this code's own address so "Create" afterwards opens a genuinely new, empty form.
+        router.replace(`/create?load=${j.id}&saved=1`);
+        return;
+      }
       setSavedId(j.id);
       setSnap(fingerprint);
       setSaveState("idle");
       setSaveMsg({ kind: "ok", text: "Saved to My codes. You can return to this code later. Changes require a new download." });
-      clearDraft();
     } catch {
       setSaveState("failed");
       setSaveMsg({ kind: "error", text: "Your draft is still here. Check your connection and try again." });

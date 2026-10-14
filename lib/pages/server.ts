@@ -7,7 +7,7 @@ import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
 import { getSession, supabaseConfigured } from "@/lib/supabase";
 
 export const PAGE_BUCKET = "page-media";
-export const GRACE_DAYS = 30;
+export const GRACE_DAYS = 7;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const PUBLIC_ID = /^[a-z2-9]{10}$/;
 export const pageTag = (publicId: string) => `page:${publicId}`;

@@ -25,6 +25,7 @@ const rows: [string, (id: PlanId) => string][] = [
   ["Centre logo", (id) => (PLANS[id].logo ? "Yes" : "No")],
   ["Largest file", (id) => `${PLANS[id].maxSize.toLocaleString("en-US")} px`],
   ["Saved codes", (id) => PLANS[id].maxSaved.toLocaleString("en-US")],
+  ["Digital business cards", (id) => (PLANS[id].maxPages ? String(PLANS[id].maxPages) : "Not included")],
 ];
 
 export default function PricingGrid({

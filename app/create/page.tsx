@@ -41,6 +41,7 @@ async function Editor({ searchParams }: { searchParams: Promise<Record<string, s
       draftId={draftId}
       savedCount={savedCount}
       loadProblem={loadProblem}
+      justSaved={sp.saved === "1" && Boolean(initial)}
     />
   );
 }

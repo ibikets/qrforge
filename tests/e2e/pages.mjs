@@ -287,7 +287,7 @@ ok(await ap.getByRole("heading", { name: "Ada Obi" }).isVisible(), "republish af
 // ---------- plan lifecycle: lapse -> grace -> unavailable ----------
 await ctl({ set: { subscriptions: [sub("pro", -3), sub("pro", 20, { user_id: OTHER })] } });
 await ap.goto(`${BASE}/p/${publicId}?t=1`, { waitUntil: "networkidle" });
-ok(await ap.getByRole("heading", { name: "Ada Obi" }).isVisible(), "lapsed plan: card stays visible during the 30-day grace period");
+ok(await ap.getByRole("heading", { name: "Ada Obi" }).isVisible(), "lapsed plan: card stays visible during the 7-day grace period");
 await page.goto(`${BASE}/workspace/pages/${pageId}`, { waitUntil: "load" }); await page.waitForTimeout(800);
 ok(await page.getByText("Editing needs an active Pro or Business plan").isVisible(), "lapsed plan: editor read-only notice");
 ok(await page.getByRole("button", { name: "Save draft" }).isDisabled(), "lapsed plan: cannot save");

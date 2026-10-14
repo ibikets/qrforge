@@ -1,0 +1,32 @@
+// Regression: after saving a code (or creating a hosted card), "Create" must open a genuinely empty form.
+import { open, ctl, BASE, sub } from "./lib.mjs";
+let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
+await ctl({ reset: true }); await ctl({ push: { subscriptions: [sub("pro", 20)] } });
+const { browser, page } = await open({ width: 1280, height: 1000, signedIn: true });
+await page.goto(BASE + "/create", { waitUntil: "load" });
+await page.getByLabel("Type", { exact: true }).selectOption("vcard");
+await page.getByLabel("First name").fill("Ada"); await page.getByLabel("Last name").fill("Obi");
+await page.getByLabel("Phone 1", { exact: true }).fill("+234 800 000 0000");
+await page.locator("#code-name").fill("Ada card");
+await page.getByRole("button", { name: "Save to my codes" }).click();
+await page.getByText("Saved to My codes.").first().waitFor({ timeout: 8000 });
+ok(page.url().includes("load="), "first save moves to the code's own address");
+await page.getByRole("link", { name: "Create", exact: true }).first().click();
+await page.waitForURL((u) => u.pathname === "/create" && !u.search, { timeout: 8000 });
+await page.getByLabel("Type", { exact: true }).waitFor();
+ok((await page.getByLabel("Type", { exact: true }).inputValue()) === "url", "Create: type is back to the default");
+ok((await page.locator("#code-name").inputValue()) === "", "Create: name is empty");
+ok((await page.getByTestId("save-status").innerText()) === "New code", "Create: status is 'New code'");
+await page.getByLabel("Type", { exact: true }).selectOption("vcard");
+ok((await page.getByLabel("First name").inputValue()) === "", "Create: contact fields are empty");
+// hosted card form
+await page.goto(BASE + "/workspace/pages/new", { waitUntil: "load" });
+await page.getByLabel("Card name").fill("Work card");
+await page.getByRole("button", { name: "Create card" }).click();
+await page.waitForURL(/\/workspace\/pages\/[^/]+$/, { timeout: 10000 }); await page.waitForTimeout(500);
+await page.goto(BASE + "/workspace/pages", { waitUntil: "load" });
+await page.getByRole("link", { name: /New|Create/ }).first().click();
+await page.waitForURL(/\/workspace\/pages\/new/); 
+ok((await page.getByLabel("Card name").inputValue()) === "", "New card: name field is empty");
+ok(await page.getByRole("button", { name: "Create card" }).isEnabled(), "New card: button is ready");
+await browser.close(); console.log(bad ? `${bad} FAILED` : "all passed"); process.exit(bad ? 1 : 0);

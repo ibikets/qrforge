@@ -16,7 +16,11 @@ export default function NewCardForm() {
     try {
       const r = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) return router.push(`/workspace/pages/${j.id}`);
+      if (r.ok) {
+        // Leave this form clean: the route can be kept alive in the background, and "New card" must open empty.
+        setTitle(""); setBusy(false);
+        return router.push(`/workspace/pages/${j.id}`);
+      }
       setErr(j.error ?? "We couldn’t create the card.");
     } catch { setErr("We couldn’t reach Qrenuvi. Check your connection and try again."); }
     setBusy(false);
