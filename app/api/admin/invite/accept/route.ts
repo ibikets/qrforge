@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { forbidden, rateLimit, readJson, sameOrigin } from "@/lib/request-guards";
 import { supabaseAdmin, supabaseServer } from "@/lib/supabase";
 import { writeAudit } from "@/lib/admin/audit";
+import { adm } from "@/lib/admin/db";
+import type { Role } from "@/lib/admin/permissions";
 
 const MESSAGE: Record<string, [number, string]> = {
   invalid: [404, "This invitation is not valid."],
@@ -28,6 +30,7 @@ export async function POST(req: Request) {
     const [status, error] = MESSAGE[String(data)] ?? [400, "This invitation cannot be used."];
     return Response.json({ error, code: data }, { status });
   }
-  await writeAudit({ userId: user.id, email: user.email.toLowerCase(), role: null as never }, { action: "staff.invite_accepted", targetType: "staff", targetId: user.id });
+  const { data: m } = await adm().from("staff_members").select("role").eq("user_id", user.id).maybeSingle();
+  await writeAudit({ userId: user.id, email: user.email.toLowerCase(), role: ((m as { role?: Role } | null)?.role ?? "support") as Role }, { action: "staff.invite_accepted", targetType: "staff", targetId: user.id });
   return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }

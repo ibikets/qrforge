@@ -63,3 +63,34 @@ export const STEP_UP: ReadonlySet<Cap> = new Set<Cap>(["staff.manage", "refund.d
 export const STEP_UP_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const ROLE_LABEL: Record<Role, string> = { owner: "Owner", support: "Support", billing: "Billing", content_editor: "Content Editor" };
+
+/** Plain-language names for the permission matrix. */
+export const CAP_LABEL: Record<Cap, string> = {
+  "overview.view": "See the overview",
+  "customers.read": "See customer profiles, notes and history",
+  "customers.read_minimal": "See customer email, plan and payments only",
+  "customers.update": "Edit customer profiles and add notes",
+  "customers.suspend": "Suspend and unsuspend accounts",
+  "customers.reset_link": "Send a password-reset email",
+  "payments.read": "See payments and references",
+  "payments.read_summary": "See payment summaries on a customer",
+  "entitlement.adjust": "Add plan days (Billing up to 30; Owner up to 90 and tier changes)",
+  "refund.request": "Request a refund",
+  "refund.decide": "Approve or decline a refund",
+  "plans.draft": "Draft plan prices and offers",
+  "plans.publish": "Publish or archive plan prices",
+  "campaigns.draft": "Draft discount offers",
+  "campaigns.publish": "Publish, pause or archive offers",
+  "content.draft": "Edit landing content drafts",
+  "content.publish": "Publish landing content",
+  "media.manage": "Manage images",
+  "support.manage": "Work support tickets",
+  "stats.financial": "See financial statistics",
+  "stats.operational": "See customer and usage statistics",
+  "stats.content": "See content statistics",
+  "staff.manage": "Invite, change and revoke staff",
+  "releases.manage": "Run maintenance and releases",
+  "settings.manage": "Change settings",
+  "audit.read_all": "See the whole audit log",
+  "audit.read_own": "See their own audit entries",
+};

@@ -88,12 +88,15 @@ const json = (status: number, body: Record<string, unknown>) => Response.json(bo
 export type RouteCtx = { staff: Staff; body: Record<string, unknown>; req: Request };
 export type RouteResult = { status?: number; data?: Record<string, unknown>; audit?: AuditInput };
 
+export type ActionSpec = { cap: Cap; reason?: boolean; limit?: number; handler: (ctx: RouteCtx) => Promise<RouteResult> };
+
 /**
  * Every privileged mutation goes through here, so none can skip a check:
- * same-origin, rate limit, fresh staff lookup, MFA, capability, step-up, bounded JSON, then the handler, then the audit record.
- * If the audit write fails after a successful change the response says so (the change is NOT silently unaudited).
+ * same-origin, fresh staff lookup, MFA, per-action capability, step-up, bounded JSON, reason, the handler, then the audit record.
+ * The capability is chosen by the SERVER from the action name; nothing in the body can select a weaker one.
+ * If the audit write fails after a successful change the response says so (the change is never silently unaudited).
  */
-export function adminRoute(opts: { cap: Cap; limit?: number; reason?: boolean }, handler: (ctx: RouteCtx) => Promise<RouteResult>) {
+export function adminActions(actions: Record<string, ActionSpec>) {
   return async function POST(req: Request): Promise<Response> {
     if (!sameOrigin(req)) return forbidden();
     const state = await currentStaff();
@@ -102,37 +105,59 @@ export function adminRoute(opts: { cap: Cap; limit?: number; reason?: boolean },
     if (state.status === "not_staff" || state.status === "revoked") return json(403, { error: "Your staff role cannot do this." });
     if (state.status === "needs_mfa") return json(403, { error: "Complete multi-factor sign-in first.", code: "mfa_required" });
     const { staff } = state;
-    const limited = rateLimit(req, "admin", opts.limit ?? 60, 60_000, staff.userId);
-    if (limited) return limited;
-    if (!staff.caps.has(opts.cap)) return json(403, { error: "Your staff role cannot do this." });
-    if (STEP_UP.has(opts.cap) && Date.now() - staff.signedInAt > STEP_UP_MAX_AGE_MS)
-      return json(403, { error: "Sign in again to confirm this action.", code: "reauth_required" });
-
     const parsed = await readJson(req, 100_000);
     if (!parsed || "tooLarge" in parsed) return json(400, { error: "Invalid request." });
-    const body = parsed.body;
+    const body = parsed.body as Record<string, unknown> | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "Invalid request." });
-    if (opts.reason !== false) {
-      const reason = (body as Record<string, unknown>).reason;
+    const name = typeof body.action === "string" ? body.action : "";
+    const spec = Object.hasOwn(actions, name) ? actions[name] : undefined;
+    if (!spec) return json(400, { error: "Unknown action." });
+    const limited = rateLimit(req, "admin", spec.limit ?? 60, 60_000, staff.userId);
+    if (limited) return limited;
+    if (!staff.caps.has(spec.cap)) return json(403, { error: "Your staff role cannot do this." });
+    if (STEP_UP.has(spec.cap) && Date.now() - staff.signedInAt > STEP_UP_MAX_AGE_MS)
+      return json(403, { error: "Sign in again to confirm this action.", code: "reauth_required" });
+    if (spec.reason !== false) {
+      const reason = body.reason;
       if (typeof reason !== "string" || reason.trim().length < 5 || reason.length > 500) return json(422, { error: "Give a reason of at least 5 characters.", field: "reason" });
     }
 
     let result: RouteResult;
     try {
-      result = await handler({ staff, body: body as Record<string, unknown>, req });
+      result = await spec.handler({ staff, body, req });
     } catch (e) {
-      const err = e as { status?: number; message?: string; field?: string };
+      const err = e as { status?: number; message?: string; field?: string; code?: string };
       if (err?.status) return json(err.status, { error: err.message ?? "Request failed.", ...(err.field ? { field: err.field } : {}) });
-      console.error("admin route failed", opts.cap, e);
+      // Known database guard codes become precise, safe messages.
+      const mapped = mapDbError(e);
+      if (mapped) return json(mapped.status, { error: mapped.message });
+      console.error("admin action failed", name, e);
       return json(500, { error: "Something went wrong. Nothing was confirmed; reload and check before retrying." });
     }
     if (result.audit) {
-      const reason = typeof (body as Record<string, unknown>).reason === "string" ? ((body as Record<string, unknown>).reason as string) : null;
-      const ok = await writeAudit(staff, { reason, ...result.audit, before: result.audit.before, after: result.audit.after });
+      const reason = typeof body.reason === "string" ? body.reason : null;
+      const ok = await writeAudit(staff, { reason, ...result.audit });
       if (!ok) return json(500, { error: "The change was applied but its audit record could not be saved. Tell the Owner.", code: "audit_failed", ...(result.data ?? {}) });
     }
     return json(result.status ?? 200, { ok: true, ...(result.data ?? {}) });
   };
+}
+
+const DB_MESSAGES: Record<string, [number, string]> = {
+  QF010: [409, "The last active Owner cannot be removed or demoted."],
+  QF012: [409, "A published plan version cannot be changed."],
+  QF021: [422, "That offer is not available."],
+  QF030: [422, "Extensions are 1 to 90 days."],
+  QF031: [422, "This customer has no paid plan to extend."],
+  QF032: [422, "Pick an existing paid customer and a paid plan."],
+  QF040: [409, "This was changed by someone else since you opened it. Reload to see the latest version."],
+};
+export function mapDbError(e: unknown): { status: number; message: string } | null {
+  const msg = String((e as { message?: string })?.message ?? "");
+  const m = /QF\d{3}/.exec(msg);
+  if (!m) return null;
+  const hit = DB_MESSAGES[m[0]];
+  return hit ? { status: hit[0], message: hit[1] } : null;
 }
 
 /** Throw from a handler to return a specific 4xx. */

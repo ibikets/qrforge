@@ -125,3 +125,12 @@ export function KV({ items }: { items: [string, ReactNode][] }) {
 }
 
 export const linkCls = "font-medium text-brand no-underline hover:text-brand-hover";
+
+/** Informational note that is not an error. */
+export function Notice({ children }: { children: ReactNode }) {
+  return (
+    <p role="note" className="mb-6 rounded-control bg-soft p-4 text-sm text-ink">
+      {children}
+    </p>
+  );
+}

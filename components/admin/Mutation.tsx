@@ -158,6 +158,7 @@ export function EditorForm({
   disabledReason,
   onDoneMessage = "Saved.",
   resetOnDone = false,
+  onDone,
 }: {
   endpoint: string;
   fields: FieldSpec[];
@@ -168,6 +169,7 @@ export function EditorForm({
   disabledReason?: string;
   onDoneMessage?: string;
   resetOnDone?: boolean;
+  onDone?: (json: Record<string, unknown>) => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, unknown>>(initial);
@@ -205,6 +207,7 @@ export function EditorForm({
       setDirty(false);
       if (resetOnDone) { setValues(initial); setWhy(""); }
       router.refresh();
+      onDone?.(r.json);
     } else {
       const field = r.json.field as string | undefined;
       setPhase({ kind: "error", message: String(r.json.error ?? "Request failed."), code: r.json.code as string | undefined, field });
