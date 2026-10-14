@@ -2,6 +2,11 @@
 -- content, tickets and settings are dropped. payments and subscriptions keep their rows; the added columns are removed.
 -- Take a backup first. Customer data (qr_codes, subscriptions, payments) is not otherwise touched.
 begin;
+drop function if exists qrforge.payments_by_day(timestamptz, timestamptz);
+drop function if exists qrforge.stats_summary(timestamptz, timestamptz);
+drop function if exists qrforge.list_customers(text, text, integer, integer);
+drop function if exists qrforge.accept_invite(text, uuid, text);
+drop function if exists qrforge.bootstrap_owner(uuid, text);
 drop function if exists qrforge.publish_content(text, integer, uuid);
 drop function if exists qrforge.save_content_draft(text, integer, jsonb, uuid);
 drop function if exists qrforge.adjust_entitlement(uuid, text, integer, text, text, uuid);

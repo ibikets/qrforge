@@ -4,7 +4,7 @@ import fs from "node:fs";
 const REPO = process.env.QRF_ROOT ?? process.cwd();
 const dir = process.env.PGDIR || "/tmp/qrf-pg";
 fs.rmSync(dir, { recursive: true, force: true });
-const server = new EmbeddedPostgres({ databaseDir: dir, user: "postgres", password: "pw", port: 54999, persistent: false });
+const server = new EmbeddedPostgres({ databaseDir: dir, user: "postgres", password: "pw", port: 54999, persistent: false, postgresFlags: ["-c", "max_connections=400"] });
 await server.initialise(); await server.start();
 const mk = async () => { const c = new pg.Client({ host: "localhost", port: 54999, user: "postgres", password: "pw", database: "postgres" }); await c.connect(); return c; };
 const admin = await mk();

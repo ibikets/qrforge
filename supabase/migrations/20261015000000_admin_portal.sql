@@ -463,6 +463,82 @@ create table qrforge.app_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Owner bootstrap: succeeds only while NO staff exist at all. The application additionally requires the caller to be the
+-- verified identity named in OWNER_BOOTSTRAP_EMAIL; this function is the race-proof second lock.
+create function qrforge.bootstrap_owner(p_user uuid, p_email text) returns boolean
+language plpgsql security definer set search_path = pg_catalog, qrforge as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('qrforge.owners', 0));
+  if exists (select 1 from qrforge.staff_members) then return false; end if;
+  insert into qrforge.staff_members (user_id, email, role) values (p_user, lower(p_email), 'owner');
+  return true;
+end $$;
+
+-- Accept a staff invitation. The signed-in account's verified email must equal the invited email; one use only; expires.
+create function qrforge.accept_invite(p_token_hash text, p_user uuid, p_email text) returns text
+language plpgsql security definer set search_path = pg_catalog, qrforge as $$
+declare v_i qrforge.staff_invites%rowtype;
+begin
+  select * into v_i from qrforge.staff_invites where token_hash = p_token_hash for update;
+  if not found then return 'invalid'; end if;
+  if v_i.revoked_at is not null then return 'revoked'; end if;
+  if v_i.accepted_at is not null then return 'used'; end if;
+  if v_i.expires_at <= now() then return 'expired'; end if;
+  if v_i.email <> lower(p_email) then return 'wrong_account'; end if;
+  insert into qrforge.staff_members as m (user_id, email, role, extra_grants, state, invited_by)
+    values (p_user, lower(p_email), v_i.role, v_i.extra_grants, 'active', v_i.invited_by)
+    on conflict (user_id) do update set role = excluded.role, extra_grants = excluded.extra_grants, state = 'active',
+      invited_by = excluded.invited_by, version = m.version + 1, updated_at = now();
+  update qrforge.staff_invites set accepted_at = now(), accepted_by = p_user where id = v_i.id;
+  return 'ok';
+end $$;
+
+-- ===== 9b. Read models for the portal (server only). No payloads, authorization codes or secrets are returned. =====
+create function qrforge.list_customers(p_q text, p_status text, p_limit integer, p_offset integer)
+returns table (user_id uuid, email text, created_at timestamptz, last_sign_in_at timestamptz, plan text,
+  current_period_end timestamptz, auto_renew boolean, status text, total bigint)
+language sql stable security definer set search_path = pg_catalog, qrforge as $$
+  select u.id, u.email::text, u.created_at, u.last_sign_in_at,
+         case when s.current_period_end > now() then s.plan else 'free' end,
+         s.current_period_end, s.auto_renew,
+         case when u.banned_until is not null and u.banned_until > now() then 'suspended' else coalesce(p.status, 'active') end,
+         count(*) over ()
+  from auth.users u
+  left join qrforge.subscriptions s on s.user_id = u.id
+  left join qrforge.customer_profiles p on p.user_id = u.id
+  where (p_q is null or p_q = '' or position(lower(p_q) in lower(u.email)) > 0)
+    and (p_status is null or p_status = '' or
+         (case when u.banned_until is not null and u.banned_until > now() then 'suspended' else coalesce(p.status, 'active') end) = p_status
+         or (p_status in ('free','pro','business') and (case when s.current_period_end > now() then s.plan else 'free' end) = p_status))
+  order by u.created_at desc
+  limit least(greatest(p_limit, 1), 100) offset greatest(p_offset, 0)
+$$;
+
+create function qrforge.stats_summary(p_from timestamptz, p_to timestamptz) returns jsonb
+language sql stable security definer set search_path = pg_catalog, qrforge as $$
+  select jsonb_build_object(
+    'customers_total', (select count(*) from auth.users),
+    'customers_new', (select count(*) from auth.users where created_at >= p_from and created_at < p_to),
+    'paid_accounts_active', (select count(*) from qrforge.subscriptions where current_period_end > now()),
+    'payments_confirmed', (select count(*) from qrforge.payments where status = 'success' and created_at >= p_from and created_at < p_to),
+    'gross_kobo', (select coalesce(sum(amount_kobo), 0) from qrforge.payments where status = 'success' and created_at >= p_from and created_at < p_to),
+    'discount_kobo', (select coalesce(sum(discount_kobo), 0) from qrforge.payments where status = 'success' and created_at >= p_from and created_at < p_to),
+    'redemptions_consumed', (select count(*) from qrforge.redemptions where state = 'consumed' and consumed_at >= p_from and consumed_at < p_to),
+    'refund_requests_open', (select count(*) from qrforge.refund_requests where state = 'requested'),
+    'refunds_executed_kobo', (select coalesce(sum(amount_kobo), 0) from qrforge.refund_requests where state = 'executed' and decided_at >= p_from and decided_at < p_to),
+    'saved_codes_total', (select count(*) from qrforge.qr_codes),
+    'tickets_open', (select count(*) from qrforge.support_tickets where state <> 'resolved'),
+    'drafts_unpublished', (select count(*) from qrforge.content_drafts d left join qrforge.content_published cp on cp.page = d.page
+        left join qrforge.content_revisions r on r.id = cp.revision_id where r.data is distinct from d.data)
+  )
+$$;
+create function qrforge.payments_by_day(p_from timestamptz, p_to timestamptz)
+returns table (day date, payments bigint, gross_kobo bigint, discount_kobo bigint)
+language sql stable security definer set search_path = pg_catalog, qrforge as $$
+  select (created_at at time zone 'Africa/Lagos')::date, count(*), sum(amount_kobo)::bigint, coalesce(sum(discount_kobo), 0)::bigint
+  from qrforge.payments where status = 'success' and created_at >= p_from and created_at < p_to group by 1 order by 1
+$$;
+
 -- ===== 10. Access: server only ===============================================================================
 do $$
 declare t text;
@@ -478,6 +554,16 @@ begin
 end $$;
 -- Even the server cannot rewrite or remove the audit trail.
 revoke update, delete, truncate on qrforge.audit_events from service_role;
+revoke all on function qrforge.list_customers(text, text, integer, integer) from public, anon, authenticated;
+revoke all on function qrforge.stats_summary(timestamptz, timestamptz) from public, anon, authenticated;
+revoke all on function qrforge.payments_by_day(timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function qrforge.list_customers(text, text, integer, integer) to service_role;
+grant execute on function qrforge.stats_summary(timestamptz, timestamptz) to service_role;
+grant execute on function qrforge.payments_by_day(timestamptz, timestamptz) to service_role;
+revoke all on function qrforge.bootstrap_owner(uuid, text) from public, anon, authenticated;
+revoke all on function qrforge.accept_invite(text, uuid, text) from public, anon, authenticated;
+grant execute on function qrforge.bootstrap_owner(uuid, text) to service_role;
+grant execute on function qrforge.accept_invite(text, uuid, text) to service_role;
 revoke all on function qrforge.issue_quote(uuid, text, text, text, boolean, interval) from public, anon, authenticated;
 revoke all on function qrforge.reserve_redemption(uuid, text) from public, anon, authenticated;
 revoke all on function qrforge.apply_quoted_payment(text, integer, text, text) from public, anon, authenticated;

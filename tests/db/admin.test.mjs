@@ -31,6 +31,28 @@ const mkCampaign = async (o = {}) => {
   return r[0].id;
 };
 
+// superuser-only test cleanup (the guard trigger exists precisely to stop this through the app)
+const wipeStaff = async () => { await q("alter table qrforge.staff_members disable trigger staff_last_owner"); await q("delete from qrforge.staff_members"); await q("alter table qrforge.staff_members enable trigger staff_last_owner"); };
+// ---------- owner bootstrap and invites ----------
+const first = await U("first@test"), second = await U("second@test");
+const [b1, b2] = await Promise.all([first, second].map(async (id, i) => { const c = await mk(); const r = await tryq(c, "select qrforge.bootstrap_owner($1,$2) b", [id, `b${i}@test`]); await c.end(); return r; }));
+ok(b1.ok && b2.ok && [b1.rows[0].b, b2.rows[0].b].filter(Boolean).length === 1, "BOOTSTRAP: two concurrent claims -> exactly one Owner is created");
+ok((await q("select count(*) c from qrforge.staff_members"))[0].c == 1, "BOOTSTRAP: no second Owner can be claimed once staff exist");
+await wipeStaff();
+const inv = await U("invitee@test"), other = await U("otheracct@test");
+const mkInvite = (hashv, email, mins = 60) => q("insert into qrforge.staff_invites(email,role,token_hash,invited_by,expires_at) values($1,'support',$2,$3, now() + make_interval(mins => $4)) returning id", [email, hashv, first, mins]);
+await mkInvite("h-ok", "invitee@test"); await mkInvite("h-exp", "invitee@test", -5); await mkInvite("h-rev", "invitee@test");
+await q("update qrforge.staff_invites set revoked_at=now() where token_hash='h-rev'");
+const acc = async (h, id, email) => (await q("select qrforge.accept_invite($1,$2,$3) r", [h, id, email]))[0].r;
+ok(await acc("h-exp", inv, "invitee@test") === "expired", "INVITE: expired invitation rejected");
+ok(await acc("h-rev", inv, "invitee@test") === "revoked", "INVITE: revoked invitation rejected");
+ok(await acc("h-ok", other, "otheracct@test") === "wrong_account", "INVITE: a different account cannot use the invitation");
+ok(await acc("nope", inv, "invitee@test") === "invalid", "INVITE: unknown token rejected");
+ok(await acc("h-ok", inv, "INVITEE@test") === "ok", "INVITE: the invited account accepts (email compared case-insensitively)");
+ok(await acc("h-ok", inv, "invitee@test") === "used", "INVITE: a second use is rejected");
+ok((await q("select role from qrforge.staff_members where user_id=$1", [inv]))[0].role === "support", "INVITE: role comes from the invitation, never from the client");
+await wipeStaff();
+
 // ---------- staff and audit ----------
 const o1 = await U("o1@test"), o2 = await U("o2@test"), s1 = await U("s1@test");
 await q("insert into qrforge.staff_members(user_id,email,role) values($1,'o1@test','owner'),($2,'o2@test','owner'),($3,'s1@test','support')", [o1, o2, s1]);
@@ -248,6 +270,17 @@ const ver = (await q("select version from qrforge.content_drafts where page='lan
 ok(!(await tryq(admin, "select qrforge.publish_content('landing',$1,$2)", [ver - 1, cs])).ok, "CONTENT: publishing a stale version is a conflict");
 await q("select qrforge.publish_content('landing',$1,$2)", [ver, cs]);
 ok((await q("select count(*) c from qrforge.content_revisions"))[0].c == 1 && (await q("select count(*) c from qrforge.content_published"))[0].c == 1, "CONTENT: publish writes an immutable revision and the published pointer");
+
+// ---------- read models ----------
+const lc = await q("select * from qrforge.list_customers('payer',null,20,0)");
+ok(lc.length === 1 && lc[0].email === "payer@test" && lc[0].plan === "pro" && lc[0].total == 1, "READ: customer search by email substring returns plan and total");
+ok((await q("select * from qrforge.list_customers('50%_',null,20,0)")).length === 0, "READ: wildcard characters in a search are literal, not patterns");
+ok((await q("select count(*) c from qrforge.list_customers(null,'pro',100,0)"))[0].c >= 1 && (await q("select count(*) c from qrforge.list_customers(null,'free',100,0)"))[0].c >= 1, "READ: plan filter works");
+ok(!(await asRole("authenticated", cu, "select * from qrforge.list_customers(null,null,10,0)")).ok, "READ: a customer cannot list customers");
+ok(!(await asRole("authenticated", cu, "select qrforge.stats_summary(now()-interval '1 day', now())")).ok, "READ: a customer cannot read statistics");
+const st = (await q("select qrforge.stats_summary(now()-interval '30 days', now()+interval '1 day') s"))[0].s;
+ok(st.payments_confirmed >= 3 && st.gross_kobo > 0 && st.discount_kobo >= 87500 && st.redemptions_consumed >= 2, "READ: statistics are computed from real rows (payments, discount, redemptions)");
+ok((await q("select * from qrforge.payments_by_day(now()-interval '30 days', now()+interval '1 day')")).length >= 1, "READ: payments by day returns rows");
 
 // ---------- rollback and re-apply ----------
 await admin.query(sql("supabase/rollback/20261015000000_admin_portal.down.sql"));
