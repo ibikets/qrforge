@@ -1,6 +1,8 @@
 import { getSession, supabaseAdmin } from "@/lib/supabase";
+import { forbidden, sameOrigin } from "@/lib/request-guards";
 
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) return forbidden();
   const { userId } = await getSession();
   if (!userId) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { enabled } = (await req.json().catch(() => ({}))) as { enabled?: boolean };

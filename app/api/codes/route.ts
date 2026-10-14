@@ -3,15 +3,25 @@ import { FIELD_DEFS, QR_TYPES, type QrType } from "@/lib/qr";
 import { validateContent } from "@/lib/qr-validation";
 import { sanitizeStyle } from "@/lib/qr-render";
 import { getSession, supabaseServer } from "@/lib/supabase";
+import { verifyLogo } from "@/lib/logo";
+import { forbidden, rateLimit, readJson, sameOrigin } from "@/lib/request-guards";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TYPE_IDS = QR_TYPES.map((t) => t.id as string);
 
 /** Create (no id) or update (with id) a saved QR code. Limits are enforced here, server-side. */
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) return forbidden();
   const { userId, plan } = await getSession();
   if (!userId) return Response.json({ error: "Please sign in to save codes" }, { status: 401 });
+  const limited = rateLimit(req, "codes", 30, 60_000, userId);
+  if (limited) return limited;
 
-  const body = await req.json().catch(() => null);
+  const parsed = await readJson(req);
+  if (parsed && "tooLarge" in parsed) return Response.json({ error: "That request is too large." }, { status: 413 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body = parsed && "body" in parsed ? (parsed.body as Record<string, any>) : null;
   if (!body || typeof body !== "object" || Array.isArray(body))
     return Response.json({ error: "Bad request" }, { status: 400 });
   const name = String(body?.name ?? "").trim().slice(0, 80);
@@ -24,7 +34,7 @@ export async function POST(req: Request) {
   const sentLogo = typeof rawStyle.logo === "string" && rawStyle.logo.length > 0;
   if (!name) return Response.json({ error: "Give your code a name before saving.", field: "name" }, { status: 400 });
   if (!TYPE_IDS.includes(type)) return Response.json({ error: "Invalid type" }, { status: 400 });
-  if (sentLogo && !clean.logo)
+  if (sentLogo && (!clean.logo || !(await verifyLogo(clean.logo))))
     return Response.json({ error: "We couldn’t use that logo. Use a PNG, JPEG or WebP that fits the size limit." }, { status: 400 });
 
   const caps = PLANS[plan];
@@ -44,6 +54,7 @@ export async function POST(req: Request) {
   const sb = await supabaseServer();
 
   if (body.id) {
+    if (typeof body.id !== "string" || !UUID.test(body.id)) return Response.json({ error: "Could not update" }, { status: 404 });
     const { data, error } = await sb
       .from("qr_codes")
       .update({ name, type, fields, style, updated_at: new Date().toISOString() })
@@ -66,6 +77,16 @@ export async function POST(req: Request) {
     .insert({ user_id: userId, name, type, fields, style })
     .select("id")
     .single();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // database-level entitlement triggers (migration 20261014000000) answer with QF001..QF004
+    if (error.code === "QF001")
+      return Response.json(
+        { error: `Your ${caps.name} plan saves up to ${caps.maxSaved} codes. Edit an existing code or choose a plan with more space.`, code: "limit" },
+        { status: 403 }
+      );
+    if (error.code === "QF002" || error.code === "QF003" || error.code === "QF004")
+      return Response.json({ error: "Your plan does not include that option." }, { status: 403 });
+    return Response.json({ error: "We couldn’t save this code. Try again." }, { status: 500 });
+  }
   return Response.json({ id: data.id });
 }

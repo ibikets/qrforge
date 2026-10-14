@@ -1,6 +1,8 @@
 import { getSession, supabaseServer } from "@/lib/supabase";
+import { forbidden, sameOrigin } from "@/lib/request-guards";
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  if (!sameOrigin(req)) return forbidden();
   const { userId } = await getSession();
   if (!userId) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { id } = await ctx.params;

@@ -5,6 +5,8 @@ import { QR_TYPES, type QrType } from "@/lib/qr";
 import { safeFileBase, validateContent } from "@/lib/qr-validation";
 import { renderSvg, sanitizeStyle } from "@/lib/qr-render";
 import { getSession } from "@/lib/supabase";
+import { verifyLogo } from "@/lib/logo";
+import { rateLimit, readJson } from "@/lib/request-guards";
 
 
 const err = (message: string, status: number, field?: string) =>
@@ -15,7 +17,12 @@ const err = (message: string, status: number, field?: string) =>
  * plan stored in the database for the signed-in user (anonymous visitors get Free).
  */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  const limited = rateLimit(req, "generate", 40);
+  if (limited) return limited;
+  const parsed = await readJson(req);
+  if (parsed && "tooLarge" in parsed) return err("That request is too large.", 413);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body = parsed && "body" in parsed ? (parsed.body as Record<string, any>) : null;
   if (!body || typeof body !== "object" || Array.isArray(body)) return err("Bad request", 400);
 
   const { plan } = await getSession();
@@ -37,7 +44,8 @@ export async function POST(req: Request) {
   const style = sanitizeStyle(body.style);
   const wantedLogo = typeof body.style?.logo === "string" && body.style.logo.length > 0;
   if (wantedLogo && !caps.logo) return err("Adding a logo needs a Pro plan.", 403);
-  if (wantedLogo && !style.logo) return err("We couldn’t use that logo. Use a PNG, JPEG or WebP that fits the size limit.", 400);
+  if (wantedLogo && (!style.logo || !(await verifyLogo(style.logo))))
+    return err("We couldn’t use that logo. Use a PNG, JPEG or WebP that fits the size limit.", 400);
 
   const v = validateContent(type, body.fields);
   if (!v.ok) return err(v.errors[v.first], 400, v.first);

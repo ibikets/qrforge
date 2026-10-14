@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { renewDueSubscriptions } from "@/lib/paystack";
 
 export const maxDuration = 300;
@@ -6,10 +7,13 @@ export const maxDuration = 300;
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return new Response("CRON_SECRET not configured", { status: 500 }); // fail closed
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) return new Response("Unauthorized", { status: 401 });
+  const got = Buffer.from(req.headers.get("authorization") ?? "");
+  const want = Buffer.from(`Bearer ${secret}`);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return new Response("Unauthorized", { status: 401 });
   try {
     return Response.json(await renewDueSubscriptions());
   } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : "failed" }, { status: 500 });
+    console.error("renewal run failed", e instanceof Error ? e.message : e);
+    return Response.json({ error: "Renewal run failed" }, { status: 500 });
   }
 }

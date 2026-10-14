@@ -2,8 +2,12 @@ import { randomUUID } from "node:crypto";
 import { PLANS, PAID_PLANS, PLAN_RANK, type PlanId } from "@/lib/plans";
 import { getSession, supabaseServer } from "@/lib/supabase";
 import { PAYSTACK_API, paystackHeaders } from "@/lib/paystack";
+import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
 
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) return forbidden();
+  const limited = rateLimit(req, "pay-init", 10);
+  if (limited) return limited;
   const body = (await req.json().catch(() => null)) as {
     plan?: PlanId;
     autoRenew?: boolean;

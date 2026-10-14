@@ -29,7 +29,7 @@ A QR code generator SaaS (modelled on myqrcode.com/create) with Free, Pro and Bu
 | Saved codes | 3 | 100 | 1,000 |
 | Blurb | For trying things out | For individuals and small teams | For agencies and heavy use |
 
-Plan source of truth: `lib/plans.ts`. Business also lists "Priority support" (copy only, no feature behind it yet).
+Plan source of truth: `lib/plans.ts`. "Priority support" was removed from Business; restore it only once the owner confirms an operational support service.
 
 ## 3. QR types and their fields
 

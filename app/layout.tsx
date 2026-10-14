@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import Link from "next/link";
 import { Suspense } from "react";
 import "./globals.css";
 import AuthNav from "@/components/AuthNav";
 import NavShell from "@/components/NavShell";
+import SiteFooter from "@/components/SiteFooter";
 
 const plex = localFont({
   src: "./fonts/IBMPlexSans-variable.woff2",
@@ -36,10 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <main id="main" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
-          <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-divider px-5 py-6 text-[13px] text-muted sm:px-10">
-            <span>QRFORGE</span>
-            <Link href="/pricing" className="text-muted">Plans in Naira</Link>
-          </footer>
+          <SiteFooter />
         </div>
       </body>
     </html>

@@ -168,7 +168,7 @@ export default function Generator({
     if (!d.basic && caps.types === "basic") {
       setGate({
         title: `Use ${d.label} codes with Pro`,
-        body: `Phone, SMS, WhatsApp, WiFi and Contact codes are on Pro and Business. Your current ${def.label.toLowerCase()} details are unchanged.`,
+        body: `Phone, SMS, WhatsApp, WiFi and Contact codes are on Pro and Business. What you entered for the current code is kept.`,
       });
       return;
     }
@@ -534,8 +534,8 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
             const next = e.key === "ArrowRight" ? order[(i + 1) % 2] : e.key === "ArrowLeft" ? order[(i + 1) % 2] : e.key === "Home" ? order[0] : e.key === "End" ? order[1] : null;
             if (next) {
               e.preventDefault();
+              document.getElementById(`tab-${next}`)?.focus(); // both tab buttons are always in the DOM, so focus can move synchronously
               setTab(next);
-              requestAnimationFrame(() => document.getElementById(`tab-${next}`)?.focus());
             }
           }}
           className={`-mb-px min-h-12 border-b-2 px-3 text-base font-medium ${tab === t ? "border-brand text-brand" : "border-transparent text-muted"}`}

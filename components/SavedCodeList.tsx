@@ -83,7 +83,6 @@ export default function SavedCodeList({ codes: initial, planName, max }: { codes
     return rows;
   }, [codes, q, type, sort]);
 
-  const filtered = q.trim() !== "" || type !== "all";
   const used = codes.length;
 
   async function remove() {

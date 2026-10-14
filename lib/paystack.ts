@@ -29,6 +29,7 @@ export type Activation = {
   transient?: boolean;
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PENDING_STATES = new Set(["pending", "ongoing", "processing", "queued"]);
 
 export async function activateFromReference(reference: string): Promise<Activation> {
@@ -52,10 +53,40 @@ export async function activateFromReference(reference: string): Promise<Activati
 
   const userId: string | undefined = tx.metadata?.user_id;
   const plan = tx.metadata?.plan as PlanId | undefined;
-  if (!userId || !plan || !PAID_PLANS.includes(plan)) return { ok: false, state: "failed" };
+  if (!userId || !UUID.test(userId) || !plan || !PAID_PLANS.includes(plan)) return { ok: false, state: "failed" };
   // never trust metadata alone: the amount paid must match the plan price
   if (tx.amount !== PLANS[plan].priceNgn * 100 || tx.currency !== "NGN") return { ok: false, state: "failed" };
 
+  const db = supabaseAdmin();
+  const authCode = tx.authorization?.reusable && tx.authorization?.authorization_code ? (tx.authorization.authorization_code as string) : null;
+  // The renewal preference is only set by a person paying, never by an automatic renewal charge.
+  const autoRenew = !tx.metadata?.renewal && typeof tx.metadata?.auto_renew === "boolean" ? (tx.metadata.auto_renew as boolean) : null;
+
+  // Preferred path: one database transaction applies the payment row and the subscription together, serialised per user.
+  try {
+    const { data: end, error } = await db.rpc("apply_payment", {
+      p_reference: reference,
+      p_user: userId,
+      p_plan: plan,
+      p_amount: tx.amount,
+      p_authorization_code: authCode,
+      p_customer_email: authCode ? (tx.customer?.email ?? null) : null,
+      p_auto_renew: autoRenew,
+      p_days: PERIOD_DAYS,
+    });
+    if (!error) return { ok: true, state: "confirmed", plan, userId, periodEnd: end ? new Date(end as string).toISOString() : undefined };
+    if (error.code === "23503") return { ok: false, state: "failed" }; // metadata names a user that does not exist: retrying cannot help
+    if (error.code !== "PGRST202") return { ok: false, state: "pending", transient: true };
+    // PGRST202: migration not applied yet, fall through to the previous (non-atomic) path
+  } catch {
+    return { ok: false, state: "pending", transient: true };
+  }
+  return legacyApply(reference, tx, userId, plan);
+}
+
+/** Pre-migration behaviour, kept so the app works whichever order the migration and deployment happen in. */
+type Tx = { amount: number; customer?: { email?: string }; authorization?: { reusable?: boolean; authorization_code?: string }; metadata?: Record<string, unknown> };
+async function legacyApply(reference: string, tx: Tx, userId: string, plan: PlanId): Promise<Activation> {
   const db = supabaseAdmin();
   const periodEnd = async () => {
     const { data } = await db.from("subscriptions").select("current_period_end").eq("user_id", userId).maybeSingle();
@@ -73,6 +104,7 @@ export async function activateFromReference(reference: string): Promise<Activati
     });
     if (claimErr) {
       if (claimErr.code === "23505") return { ok: true, state: "confirmed", plan, userId, periodEnd: await periodEnd() };
+      if (claimErr.code === "23503") return { ok: false, state: "failed" }; // unknown user in metadata: retrying cannot help
       return { ok: false, state: "pending", transient: true };
     }
 
@@ -158,7 +190,8 @@ export async function renewDueSubscriptions() {
 
     if (json?.status && status === "success") {
       const r = await activateFromReference(reference);
-      r.ok ? summary.renewed++ : summary.failed++;
+      if (r.ok) summary.renewed++;
+      else summary.failed++;
     } else if (json?.status && status && status !== "failed") {
       summary.pending++; // e.g. awaiting OTP/3DS; the charge.success webhook will activate it
     } else {
