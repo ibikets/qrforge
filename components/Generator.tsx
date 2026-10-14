@@ -153,6 +153,11 @@ export default function Generator({
     setDl((s) => (s.state === "done" || s.state === "error" ? { state: "idle", msg: "" } : s));
   };
 
+  const setFields = (fn: (f: Fields) => Fields) => {
+    setDrafts((d) => ({ ...d, [type]: fn(d[type] ?? {}) }));
+    setDl((s) => (s.state === "done" || s.state === "error" ? { state: "idle", msg: "" } : s));
+  };
+
   function focusField(key: string) {
     setTab("content");
     requestAnimationFrame(() =>
@@ -344,7 +349,7 @@ export default function Generator({
 
         <Tabs tab={tab} setTab={setTab} />
         <div id="panel-content" role="tabpanel" aria-labelledby="tab-content" hidden={tab !== "content"}>
-          <ContentPanel type={type} fields={fields} setField={setField} errors={v.ok ? {} : v.errors} visible={visible} onType={pickType} paidLocked={caps.types === "basic"} />
+          <ContentPanel type={type} fields={fields} setField={setField} setFields={setFields} errors={v.ok ? {} : v.errors} visible={visible} onType={pickType} paidLocked={caps.types === "basic"} />
           <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-divider pt-5">
             <span className="text-[13px] text-muted">{swatch}</span>
             <Button variant="ghost" onClick={() => setTab("appearance")}>Edit appearance</Button>

@@ -16,6 +16,8 @@ These run against local stand-ins, never real services. They are evidence of beh
 | `tests/e2e/inventory.mjs` | every row of SCREEN-INVENTORY.csv: content, interaction, dialog focus, 1440+390 screenshots, axe. Two phases: `PHASE=plain` and `PHASE=offer` (seed offers, then restart the app only; offers are cached for minutes) | same + `AXE_PATH` |
 | `tests/e2e/assets.mjs`, `webhook-history.mjs`, `seed-admin.mjs` | image library safety and delivery-history screens; shared seed data | same |
 | `tests/site-origin.ts`, `tests/content-image.ts` | preview-safe callback origin; hero image validation | `npx tsx` |
+| `tests/contact.ts` | repeatable contact fields: helpers, validation, vCard encoding, QR round trip (optional `VCARD_OUT` to feed an independent parser) | `npx tsx` |
+| `tests/e2e/contact-rows.mjs` | contact form rows in a browser: + / remove, focus, errors, drafts, save/reload/edit, PNG decode, staff view | same + `sharp`, `jsqr` resolvable from the repo |
 | `tests/qr/*` | decode matrix over real exports with jsQR and ZXing, distortion tests, dot-radius experiments | `npm i --no-save zxing-wasm jsqr`; see header comments |
 
 Stand-in app: `node tests/stand-ins/server.mjs` (Supabase on :54321, Paystack on :54322), then build and start with

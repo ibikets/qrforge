@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
-import { buildPayload, type Fields, type QrType } from "@/lib/qr";
+import { allowedKeys, buildPayload, type Fields, type QrType } from "@/lib/qr";
+import { GROUPS, GROUP_KEYS, dedupeKey, rowsOf, socialError, type ContactGroup } from "@/lib/qr-contact";
 
 export type FieldErrors = Record<string, string>;
 export type Validation =
@@ -109,14 +110,28 @@ export function validateContent(type: QrType, input: unknown): Validation {
       break;
     }
     case "vcard": {
+      const known = allowedKeys("vcard");
+      for (const k of Object.keys(f)) if (!known.has(k)) errors[k] = "Invalid value.";
       if (!get("firstName") && !get("lastName")) errors.firstName = "Enter at least a first or last name.";
       for (const k of ["firstName", "lastName", "org", "title"]) if (/[;]/.test(f[k] ?? "")) errors[k] = "Remove semicolons.";
-      if (get("email") && !EMAIL.test(get("email"))) errors.email = "Enter a valid email address.";
-      const pe = phoneError(f.phone ?? "", "phone number", false);
-      if (pe) errors.phone = pe;
-      if (get("website")) {
-        const we = urlError(f.website);
-        if (we) errors.website = we;
+      for (const g of GROUP_KEYS) {
+        const seen = new Map<string, string>();
+        for (const r of rowsOf(f, g)) {
+          const v = r.value.trim();
+          if (r.tKey in f && !(GROUPS[g].types.some((t) => t.id === r.type))) errors[r.tKey] = "Choose one of the listed options.";
+          if (!v) continue;
+          let e: string | null = null;
+          if (g === "phone") e = phoneError(v, "phone number", false);
+          else if (g === "email") e = EMAIL.test(v) ? null : "Enter a valid email address, for example hello@example.com.";
+          else if (g === "website") e = urlError(v);
+          else e = socialError(r.type, v);
+          if (!e) {
+            const d = dedupeKey(g as ContactGroup, v, r.type);
+            if (seen.has(d)) e = "Already added above.";
+            else seen.set(d, r.key);
+          }
+          if (e && !errors[r.key]) errors[r.key] = e;
+        }
       }
       break;
     }
@@ -130,8 +145,8 @@ export function validateContent(type: QrType, input: unknown): Validation {
   try {
     QRCode.create(payload, { errorCorrectionLevel: "H" });
   } catch {
-    const key = type === "text" ? "text" : type === "url" ? "url" : Object.keys(f)[0] ?? "_";
-    return { ok: false, errors: { [key]: "That is too much data for one QR code. Shorten it." }, first: key };
+    const key = type === "text" ? "text" : type === "url" ? "url" : type === "vcard" ? "vcard_size" : Object.keys(f)[0] ?? "_";
+    return { ok: false, errors: { [key]: type === "vcard" ? "These contact details are too much for one QR code. Remove a row or shorten the details." : "That is too much data for one QR code. Shorten it." }, first: key };
   }
   return { ok: true, payload };
 }

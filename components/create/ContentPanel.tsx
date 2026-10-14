@@ -3,6 +3,7 @@ import { useState } from "react";
 import { FIELD_DEFS, QR_TYPES, type Fields, type QrType } from "@/lib/qr";
 import type { FieldErrors } from "@/lib/qr-validation";
 import { controlClass, SelectField } from "@/components/ui/Field";
+import ContactRows from "@/components/create/ContactRows";
 
 const EXTRA: Record<string, { type?: string; inputMode?: "url" | "email" | "tel" | "text"; autoComplete?: string; help?: string }> = {
   "url.url": { type: "text", inputMode: "url", autoComplete: "off", help: "Use a full address, for example https://example.com." },
@@ -10,9 +11,6 @@ const EXTRA: Record<string, { type?: string; inputMode?: "url" | "email" | "tel"
   "phone.phone": { type: "tel", inputMode: "tel", autoComplete: "off", help: "Include the country code, for example +234…" },
   "sms.phone": { type: "tel", inputMode: "tel", autoComplete: "off", help: "Include the country code." },
   "whatsapp.phone": { type: "tel", inputMode: "tel", autoComplete: "off", help: "Digits with country code, no leading +, for example 2348000000000." },
-  "vcard.phone": { type: "tel", inputMode: "tel", autoComplete: "off" },
-  "vcard.email": { type: "email", inputMode: "email", autoComplete: "off" },
-  "vcard.website": { type: "text", inputMode: "url", autoComplete: "off" },
 };
 
 const TYPE_HELP: Record<QrType, string> = {
@@ -23,7 +21,7 @@ const TYPE_HELP: Record<QrType, string> = {
   sms: "Opens a text message to this number with your message ready.",
   whatsapp: "Opens a WhatsApp chat with this number.",
   wifi: "Lets people join the network by scanning. Anyone with the code can read the password.",
-  vcard: "Lets people save your contact details to their phone.",
+  vcard: "Lets people save your contact to their phone. Add more than one number, email or link if you need.",
 };
 
 const LABEL_OVERRIDE: Record<string, string> = { "wifi.encryption": "Security" };
@@ -33,6 +31,7 @@ export default function ContentPanel({
   type,
   fields,
   setField,
+  setFields,
   errors,
   visible,
   onType,
@@ -41,6 +40,7 @@ export default function ContentPanel({
   type: QrType;
   fields: Fields;
   setField: (k: string, v: string) => void;
+  setFields: (fn: (f: Fields) => Fields) => void;
   errors: FieldErrors;
   /** only errors for fields the person has touched (or all after an export/save attempt) */
   visible: (k: string) => boolean;
@@ -152,6 +152,7 @@ export default function ContentPanel({
           </div>
         );
       })}
+      {type === "vcard" ? <ContactRows fields={fields} setField={setField} setFields={setFields} errors={errors} visible={visible} /> : null}
     </div>
   );
 }

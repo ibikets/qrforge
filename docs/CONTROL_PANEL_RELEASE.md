@@ -180,6 +180,11 @@ No one can become an Owner today (`OWNER_BOOTSTRAP_EMAIL` is unset everywhere). 
 5. Legal and support details; credential rotation.
 Merging to `main` and a production deploy are **not** requested yet.
 
+## 10. Contact fields, preview-origin fix and Blinq benchmark (added 14 October 2026, afternoon session)
+- **Repeatable contact fields.** The Contact (vCard) form supports up to five phones, emails, websites and social profiles, with a "+" at the end of each group's first row, a remove button on added rows, label/platform selectors and errors beside the row. Storage is still a flat map (row 1 keeps the original keys, later rows are `phone_2`...), so saved codes and drafts from before this work load unchanged. Shared validation (`lib/qr-validation.ts`) is used by the browser and by `/api/codes` and `/api/generate`; the save endpoint now keeps the new row keys (it previously whitelisted only the old keys). The vCard encoder escapes text properly (commas in company names were previously unescaped). The management portal's customer page lists saved codes and, for contact cards, how many details of each kind they hold; values are never shown to staff. Tests: `tests/contact.ts` (41 checks, Local) and `tests/e2e/contact-rows.mjs` (Stand-in; 1440/390/320 px, axe, focus, drafts, save/reload/edit, PNG download decoded back to the vCard, staff view). Compatibility limits and the owner-run phone check are in `docs/BLINQ_BENCHMARK.md`.
+- **Blinq benchmark and opportunity assessment:** `docs/BLINQ_BENCHMARK.md` (dated sources, comparison, ranked features, assumptions labelled).
+- **Preview-origin fix and cron guard** (section 3b) are on this branch; preview env-variable changes still need your approval (section 3c).
+
 ## Appendix: suites and results (final runs, this branch)
 | Suite | Class | Result |
 |---|---|---|
@@ -191,4 +196,6 @@ Merging to `main` and a production deploy are **not** requested yet.
 | `tests/e2e/assets.mjs`, `webhook-history.mjs`, `session-nav.mjs` | Stand-in | all pass |
 | `tests/e2e/admin-screens.mjs` | Stand-in | 160 pass |
 | `tests/site-origin.ts`, `plans-sync.ts`, `content-image.ts` | Local | pass |
-| `tsc`, ESLint | Local | 0 errors (17 warnings) |
+| `tests/contact.ts` | Local | 41 pass |
+| `tests/e2e/contact-rows.mjs` | Stand-in | 78 pass |
+| `tsc`, ESLint | Local | 0 errors (17 warnings at last full run) |

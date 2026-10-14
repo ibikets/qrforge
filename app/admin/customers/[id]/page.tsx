@@ -4,6 +4,8 @@ import { Badge, DataTable, Denied, Empty, KV, LoadError, PageHead, Panel, Td, ko
 import { ActionButton, EditorForm } from "@/components/admin/Mutation";
 import { currentStaff } from "@/lib/admin/guard";
 import { adm, load, q } from "@/lib/admin/read";
+import { GROUPS, GROUP_KEYS, rowsOf } from "@/lib/qr-contact";
+import { QR_TYPES } from "@/lib/qr";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EP = "/api/admin/customers";
@@ -38,6 +40,14 @@ export default async function Customer({ params }: { params: Promise<{ id: strin
   const notes = full ? await load(async () => q(await adm().from("customer_notes").select("id,body,created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(20)) as { id: string; body: string; created_at: string }[]) : null;
   const tickets = caps.has("support.manage") ? await load(async () => q(await adm().from("support_tickets").select("id,subject,state,created_at").eq("customer_id", id).order("created_at", { ascending: false }).limit(10)) as { id: string; subject: string; state: string; created_at: string }[]) : null;
 
+  // Saved codes: names, types and how many contact details a contact card holds. Values are never shown here.
+  const codes = full ? await load(async () => q(await adm().from("qr_codes").select("id,name,type,fields,updated_at").eq("user_id", id).order("updated_at", { ascending: false }).limit(50)) as { id: string; name: string | null; type: string; fields: Record<string, string> | null; updated_at: string }[]) : null;
+  const contactSummary = (f: Record<string, string> | null) => {
+    const x = f ?? {};
+    const parts = GROUP_KEYS.map((g) => ({ g, n: rowsOf(x, g).filter((r) => r.value.trim()).length })).filter((p) => p.n > 0);
+    return parts.length ? parts.map((p) => `${p.n} ${p.n === 1 ? GROUPS[p.g].singular : GROUPS[p.g].plural}`).join(" · ") : "No phone, email, website or social entries";
+  };
+
   const active = sub && new Date(sub.current_period_end) > new Date();
   const suspended = (profile?.status === "suspended") || Boolean((user as { banned_until?: string }).banned_until && new Date((user as { banned_until?: string }).banned_until!) > new Date());
   const manage = !isStaff;
@@ -63,6 +73,24 @@ export default async function Customer({ params }: { params: Promise<{ id: strin
         />
         <p className="mt-4 text-[13px] text-muted">The sign-in email changes only through the customer’s own verified flow. The contact email below is separate.</p>
       </Panel>
+
+      {codes ? (
+        <Panel title="Saved codes">
+          {!codes.ok ? <LoadError what="saved codes" /> : codes.data.length === 0 ? <Empty title="No saved codes" /> : (
+            <DataTable label="Saved codes" head={["Name", "Type", "Contents", "Updated"]}>
+              {codes.data.map((c) => (
+                <tr key={c.id}>
+                  <Td>{c.name || "Untitled"}</Td>
+                  <Td>{QR_TYPES.find((t) => t.id === c.type)?.label ?? c.type}</Td>
+                  <Td>{c.type === "vcard" ? contactSummary(c.fields) : "Not shown"}</Td>
+                  <Td>{lagos(c.updated_at)}</Td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+          <p className="mt-4 text-[13px] text-muted">Contact details inside a customer’s codes are not shown to staff. Only how many of each kind a contact card holds.</p>
+        </Panel>
+      ) : null}
 
       {full && caps.has("customers.update") && manage ? (
         <Panel title="Edit profile">
