@@ -5,6 +5,7 @@ import "./globals.css";
 import AuthNav from "@/components/AuthNav";
 import NavShell from "@/components/NavShell";
 import SiteFooter from "@/components/SiteFooter";
+import PublicFooter from "@/components/PublicFooter";
 
 const plex = localFont({
   src: "./fonts/IBMPlexSans-variable.woff2",
@@ -53,7 +54,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <main id="main" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
-          <SiteFooter />
+          <PublicFooter>
+            <SiteFooter />
+          </PublicFooter>
         </div>
       </body>
     </html>

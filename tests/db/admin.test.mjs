@@ -140,12 +140,14 @@ r = await quote(paid, "pro", null, "idem-paid-0001"); ok(r.ok && r.rows[0].savin
 r = await quote(await U("fresh@test"), "pro", null, "idem-fresh-001"); ok(r.ok && r.rows[0].saving_kobo === 35000, "ELIGIBILITY: new paid customer gets the offer");
 const failedOnly = await U("failedonly@test"); await q("insert into qrforge.payments(reference,user_id,plan,amount_kobo,status) values('hist-f',$1,'pro',350000,'failed')", [failedOnly]);
 r = await quote(failedOnly, "pro", null, "idem-failed-001"); ok(r.ok && r.rows[0].saving_kobo === 35000, "ELIGIBILITY: a failed payment does not remove 'new paid' status");
-for (const [st, label] of [["paused", "paused"], ["draft", "draft"], ["scheduled", "scheduled"], ["ended", "ended"], ["archived", "archived"]]) {
+for (const [st, label] of [["paused", "paused"], ["draft", "draft"], ["ended", "ended"], ["archived", "archived"]]) {
   await q("update qrforge.campaigns set state=$2 where id=$1", [cn, st]);
   r = await quote(await U(`st-${st}@test`), "pro", null, `idem-state-${st}`); ok(r.ok && r.rows[0].saving_kobo === 0, `SCHEDULE: ${label} campaign gives no discount`);
 }
-await q("update qrforge.campaigns set state='active', starts_at=now()+interval '1 hour' where id=$1", [cn]);
-r = await quote(await U("early@test"), "pro", null, "idem-early-001"); ok(r.ok && r.rows[0].saving_kobo === 0, "SCHEDULE: before start (inclusive) -> no discount");
+await q("update qrforge.campaigns set state='scheduled', starts_at=now()+interval '1 hour' where id=$1", [cn]);
+r = await quote(await U("early@test"), "pro", null, "idem-early-001"); ok(r.ok && r.rows[0].saving_kobo === 0, "SCHEDULE: a scheduled campaign before its start gives no discount");
+await q("update qrforge.campaigns set starts_at=now() - interval '1 second' where id=$1", [cn]);
+r = await quote(await U("ontime@test"), "pro", null, "idem-ontime-01"); ok(r.ok && r.rows[0].saving_kobo === 35000, "SCHEDULE: a scheduled campaign applies from its start instant (server clock, no manual activation)");
 await q("update qrforge.campaigns set starts_at=now()-interval '2 hours', ends_at=now()-interval '1 second' where id=$1", [cn]);
 r = await quote(await U("late@test"), "pro", null, "idem-late-0001"); ok(r.ok && r.rows[0].saving_kobo === 0, "SCHEDULE: at/after end (exclusive) -> no discount");
 // Lagos boundary: an end instant stored as 2026-11-30 00:00 Lagos (= 2026-11-29 23:00 UTC) is exclusive

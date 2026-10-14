@@ -235,7 +235,7 @@ begin
   if not found then raise exception 'QF020: no published price for this plan' using errcode = 'P0001'; end if;
 
   select c.* into v_c from qrforge.campaigns c
-    where c.state = 'active' and now() >= c.starts_at and now() < c.ends_at and p_plan = any (c.plans)
+    where c.state in ('active','scheduled') and now() >= c.starts_at and now() < c.ends_at and p_plan = any (c.plans)
       and ( (p_code_hash is null and (c.delivery = 'public' or (c.delivery = 'targeted' and c.code_hash is null)))
          or (p_code_hash is not null and c.code_hash = p_code_hash) )
       and (c.delivery <> 'targeted' or exists (select 1 from qrforge.campaign_targets t where t.campaign_id = c.id and t.user_id = p_user))
@@ -283,7 +283,7 @@ begin
   if v_q.campaign_id is not null then
     perform pg_advisory_xact_lock(hashtextextended('qrforge.campaign:' || v_q.campaign_id::text, 0));
     select * into v_c from qrforge.campaigns where id = v_q.campaign_id;
-    if v_c.state <> 'active' or now() >= v_c.ends_at then return 'unavailable'; end if;
+    if v_c.state not in ('active','scheduled') or now() < v_c.starts_at or now() >= v_c.ends_at then return 'unavailable'; end if;
     if (select count(*) from qrforge.redemptions r where r.campaign_id = v_c.id and r.user_id = v_q.user_id and r.state in ('reserved','consumed')) >= v_c.per_customer_limit
       then return 'unavailable'; end if;
     if v_c.total_limit is not null

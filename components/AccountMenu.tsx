@@ -40,9 +40,13 @@ const row =
 export default function AccountMenu({
   email,
   placement = "down",
+  accountHref = "/account",
+  accountLabel = "My account",
 }: {
   email: string;
   placement?: "down" | "up";
+  accountHref?: string;
+  accountLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -126,25 +130,27 @@ export default function AccountMenu({
           </div>
           <div className="my-1 border-t border-divider" role="separator" />
           <Link
-            href="/account"
+            href={accountHref}
             role="menuitem"
             tabIndex={-1}
             className={row}
             onClick={() => setOpen(false)}
           >
             <UserIcon className="text-brand" />
-            My account
+            {accountLabel}
           </Link>
-          <Link
-            href="/billing"
-            role="menuitem"
-            tabIndex={-1}
-            className={row}
-            onClick={() => setOpen(false)}
-          >
-            <CreditCardIcon className="text-brand" />
-            Billing
-          </Link>
+          {accountHref === "/account" ? (
+            <Link
+              href="/billing"
+              role="menuitem"
+              tabIndex={-1}
+              className={row}
+              onClick={() => setOpen(false)}
+            >
+              <CreditCardIcon className="text-brand" />
+              Billing
+            </Link>
+          ) : null}
           <button
             type="button"
             role="menuitem"

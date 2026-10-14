@@ -44,6 +44,9 @@ export default function NavShell({
   const items = pending ? [] : email ? (rail ? authed : signedInPublic) : anon;
   const active = (h: string) => path === h || path.startsWith(h + "/");
 
+  // The management area renders its own shell.
+  if (path.startsWith("/admin")) return null;
+
   if (rail) {
     return (
       <>
