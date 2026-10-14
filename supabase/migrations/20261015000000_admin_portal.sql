@@ -240,8 +240,10 @@ begin
          or (p_code_hash is not null and c.code_hash = p_code_hash) )
       and (c.delivery <> 'targeted' or exists (select 1 from qrforge.campaign_targets t where t.campaign_id = c.id and t.user_id = p_user))
       and (c.audience <> 'new_paid' or not exists (select 1 from qrforge.payments pay where pay.user_id = p_user and pay.status = 'success'))
-      and (select count(*) from qrforge.redemptions r where r.campaign_id = c.id and r.user_id = p_user and r.state in ('reserved','consumed')) < c.per_customer_limit
-      and (c.total_limit is null or (select count(*) from qrforge.redemptions r where r.campaign_id = c.id and r.state in ('reserved','consumed')) < c.total_limit)
+      -- a customer's own unpaid hold never blocks their retry: reserve_redemption supersedes it
+      and (select count(*) from qrforge.redemptions r where r.campaign_id = c.id and r.user_id = p_user and r.state = 'consumed') < c.per_customer_limit
+      and (c.total_limit is null or (select count(*) from qrforge.redemptions r where r.campaign_id = c.id
+             and (r.state = 'consumed' or (r.state = 'reserved' and r.expires_at > now() and r.user_id <> p_user))) < c.total_limit)
     order by c.priority desc, c.created_at, c.id limit 1;
 
   if p_code_hash is not null and not found then raise exception 'QF021: offer unavailable' using errcode = 'P0001'; end if;
@@ -284,13 +286,17 @@ begin
     perform pg_advisory_xact_lock(hashtextextended('qrforge.campaign:' || v_q.campaign_id::text, 0));
     select * into v_c from qrforge.campaigns where id = v_q.campaign_id;
     if v_c.state not in ('active','scheduled') or now() < v_c.starts_at or now() >= v_c.ends_at then return 'unavailable'; end if;
-    if (select count(*) from qrforge.redemptions r where r.campaign_id = v_c.id and r.user_id = v_q.user_id and r.state in ('reserved','consumed')) >= v_c.per_customer_limit
+    -- a customer who abandons a checkout and starts again moves their single hold to the new checkout
+    update qrforge.redemptions set state = 'released'
+      where campaign_id = v_c.id and user_id = v_q.user_id and state = 'reserved' and quote_id <> v_q.id;
+    if (select count(*) from qrforge.redemptions r where r.campaign_id = v_c.id and r.user_id = v_q.user_id and r.state = 'consumed') >= v_c.per_customer_limit
       then return 'unavailable'; end if;
     if v_c.total_limit is not null
-       and (select count(*) from qrforge.redemptions r where r.campaign_id = v_c.id and r.state in ('reserved','consumed')) >= v_c.total_limit
+       and (select count(*) from qrforge.redemptions r where r.campaign_id = v_c.id
+              and (r.state = 'consumed' or (r.state = 'reserved' and r.expires_at > now()))) >= v_c.total_limit
       then return 'sold_out'; end if;
     insert into qrforge.redemptions (quote_id, campaign_id, user_id, reference, expires_at)
-      values (v_q.id, v_c.id, v_q.user_id, p_reference, now() + interval '24 hours');
+      values (v_q.id, v_c.id, v_q.user_id, p_reference, now() + interval '30 minutes');
   end if;
   update qrforge.quotes set state = 'initialised', reference = p_reference where id = v_q.id;
   return 'ok';

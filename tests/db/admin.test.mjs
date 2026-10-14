@@ -188,10 +188,26 @@ const cap2 = await mkCampaign({ slug: "peruser", bp: 1000, total: 100, per: 1 })
 const dup = await U("dupuser@test");
 const dq = [(await quote(dup, "pro", null, "idem-dup-000001")).rows[0], (await quote(dup, "business", null, "idem-dup-000002")).rows[0]];
 const dres = await Promise.all(dq.map(async (qq, i) => { const c = await mk(); try { return (await c.query("select qrforge.reserve_redemption($1,$2) r", [qq.id, `ref-dup-${i}`])).rows[0].r; } finally { await c.end(); } }));
-ok(dres.filter((x) => x === "ok").length === 1, `CAPACITY: one customer racing two checkouts claims once (got ${JSON.stringify(dres)})`);
-const retry = (await q("select qrforge.reserve_redemption($1,$2) r", [dq[dres.indexOf("ok")].id, `ref-dup-${dres.indexOf("ok")}`]))[0].r;
-ok(retry === "ok" && (await q("select count(*) c from qrforge.redemptions where user_id=$1", [dup]))[0].c == 1, "CAPACITY: retrying the same checkout with the same reference is a no-op");
+ok((await q("select count(*) c from qrforge.redemptions where user_id=$1 and state='reserved'", [dup]))[0].c == 1, `CAPACITY: one customer racing two checkouts holds the offer once (got ${JSON.stringify(dres)})`);
+const holder = (await q("select quote_id from qrforge.redemptions where user_id=$1 and state='reserved'", [dup]))[0].quote_id;
+const holderIdx = dq.findIndex((x) => x.id === holder);
+const retry = (await q("select qrforge.reserve_redemption($1,$2) r", [holder, `ref-dup-${holderIdx}`]))[0].r;
+ok(retry === "ok" && (await q("select count(*) c from qrforge.redemptions where user_id=$1 and state='reserved'", [dup]))[0].c == 1, "CAPACITY: retrying the same checkout with the same reference is a no-op");
 await q("update qrforge.campaigns set state='archived' where id in ($1,$2)", [cap, cap2]);
+// abandoned checkout then a fresh one: the hold moves, the customer is not locked out of their own offer
+const cap3 = await mkCampaign({ slug: "abandon", bp: 1000, total: 1, per: 1 });
+const ab = await U("abandon@test");
+const a1 = (await quote(ab, "pro", null, "idem-aband-0001")).rows[0]; await q("select qrforge.reserve_redemption($1,'ref-ab-1')", [a1.id]);
+const a2 = await quote(ab, "pro", null, "idem-aband-0002");
+ok(a2.ok && a2.rows[0].saving_kobo === 35000, "ABANDON: returning after an unpaid checkout still shows the offer (even on the last slot)");
+ok((await q("select qrforge.reserve_redemption($1,'ref-ab-2') r", [a2.rows[0].id]))[0].r === "ok", "ABANDON: the new checkout takes over the hold");
+ok((await q("select count(*) c from qrforge.redemptions where campaign_id=$1 and state='reserved'", [cap3]))[0].c == 1, "ABANDON: still exactly one live hold");
+const abOther = await quote(await U("abandon-other@test"), "pro", null, "idem-aband-0003");
+ok(abOther.ok && abOther.rows[0].saving_kobo === 0, "ABANDON: another customer still cannot take the last slot while it is held");
+await q("update qrforge.redemptions set expires_at = now() - interval '1 minute' where campaign_id=$1", [cap3]);
+const other2 = await quote(await U("abandon-other2@test"), "pro", null, "idem-aband-0004");
+ok(other2.ok && other2.rows[0].saving_kobo === 35000, "ABANDON: an expired hold frees the slot immediately, without waiting for the cleanup job");
+await q("update qrforge.campaigns set state='archived' where id=$1", [cap3]);
 
 // ---------- quote expiry, pause policy ----------
 const cex = await mkCampaign({ slug: "expiry-test", bp: 1000 });
