@@ -4,6 +4,7 @@ import { validateContent } from "@/lib/qr-validation";
 import { sanitizeStyle } from "@/lib/qr-render";
 import { getSession, supabaseServer } from "@/lib/supabase";
 import { verifyLogo } from "@/lib/logo";
+import { verifyContactPhoto } from "@/lib/pages/media";
 import { forbidden, rateLimit, readJson, sameOrigin } from "@/lib/request-guards";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
   for (const k of Object.keys(rawFields)) if (allowed.has(k) && typeof rawFields[k] === "string") fields[k] = rawFields[k];
   const v = validateContent(type as QrType, fields);
   if (!v.ok) return Response.json({ error: v.errors[v.first], field: v.first }, { status: 400 });
+  if (type === "vcard" && fields.photo && !(await verifyContactPhoto(fields.photo))) return Response.json({ error: "That photo could not be used. Choose it again.", field: "photo" }, { status: 400 });
   if (JSON.stringify(fields).length > 20_000) return Response.json({ error: "Too much data" }, { status: 413 });
 
   const sb = await supabaseServer();

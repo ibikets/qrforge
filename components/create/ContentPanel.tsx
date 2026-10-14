@@ -4,6 +4,7 @@ import { FIELD_DEFS, QR_TYPES, type Fields, type QrType } from "@/lib/qr";
 import type { FieldErrors } from "@/lib/qr-validation";
 import { controlClass, SelectField } from "@/components/ui/Field";
 import ContactRows from "@/components/create/ContactRows";
+import ContactPhoto from "@/components/create/ContactPhoto";
 
 const EXTRA: Record<string, { type?: string; inputMode?: "url" | "email" | "tel" | "text"; autoComplete?: string; help?: string }> = {
   "url.url": { type: "text", inputMode: "url", autoComplete: "off", help: "Use a full address, for example https://example.com." },
@@ -152,6 +153,7 @@ export default function ContentPanel({
           </div>
         );
       })}
+      {type === "vcard" ? <ContactPhoto name={[fields.firstName, fields.lastName].filter(Boolean).join(" ")} photo={fields.photo ?? ""} onChange={(b) => setFields((f) => { const n = { ...f }; if (b) n.photo = b; else delete n.photo; return n; })} /> : null}
       {type === "vcard" ? <ContactRows fields={fields} setField={setField} setFields={setFields} errors={errors} visible={visible} /> : null}
     </div>
   );

@@ -13,6 +13,9 @@ export const PLANS: Record<
     logo: boolean;
     maxSize: number;
     maxSaved: number;
+    /** hosted pages (digital business cards...) and private media storage; enforced in the database, see 20261016000000_hosted_pages.sql */
+    maxPages: number;
+    maxMediaBytes: number;
   }
 > = {
   free: {
@@ -25,6 +28,8 @@ export const PLANS: Record<
     logo: false,
     maxSize: 512,
     maxSaved: 3,
+    maxPages: 0,
+    maxMediaBytes: 0,
   },
   pro: {
     name: "Pro",
@@ -42,6 +47,8 @@ export const PLANS: Record<
     logo: true,
     maxSize: 2048,
     maxSaved: 100,
+    maxPages: 5,
+    maxMediaBytes: 25 * 1024 * 1024,
   },
   business: {
     name: "Business",
@@ -53,6 +60,8 @@ export const PLANS: Record<
     logo: true,
     maxSize: 4096,
     maxSaved: 1000,
+    maxPages: 25,
+    maxMediaBytes: 100 * 1024 * 1024,
   },
 };
 

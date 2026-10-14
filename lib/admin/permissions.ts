@@ -28,6 +28,8 @@ export const CAPS = [
   "content.publish",
   "media.manage",
   "support.manage",
+  "pages.read",
+  "pages.takedown",
   "stats.financial",
   "stats.operational",
   "stats.content",
@@ -41,7 +43,7 @@ export type Cap = (typeof CAPS)[number];
 
 const ROLE_CAPS: Record<Role, readonly Cap[]> = {
   owner: CAPS,
-  support: ["overview.view", "customers.read", "customers.update", "customers.suspend", "customers.reset_link", "payments.read_summary", "support.manage", "stats.operational", "audit.read_own"],
+  support: ["overview.view", "customers.read", "customers.update", "customers.suspend", "customers.reset_link", "payments.read_summary", "support.manage", "pages.read", "pages.takedown", "stats.operational", "audit.read_own"],
   billing: ["overview.view", "customers.read_minimal", "payments.read", "entitlement.adjust", "refund.request", "plans.draft", "campaigns.draft", "stats.financial", "audit.read_own"],
   content_editor: ["overview.view", "content.draft", "media.manage", "stats.content", "audit.read_own"],
 };
@@ -59,7 +61,7 @@ export function capsFor(role: Role, grants: readonly string[] = []): Set<Cap> {
 }
 
 /** Actions that need a recent sign-in on top of MFA (step-up). */
-export const STEP_UP: ReadonlySet<Cap> = new Set<Cap>(["staff.manage", "refund.decide", "releases.manage", "plans.publish", "campaigns.publish", "content.publish", "customers.suspend", "settings.manage"]);
+export const STEP_UP: ReadonlySet<Cap> = new Set<Cap>(["staff.manage", "refund.decide", "releases.manage", "plans.publish", "campaigns.publish", "content.publish", "customers.suspend", "settings.manage", "pages.takedown"]);
 export const STEP_UP_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const ROLE_LABEL: Record<Role, string> = { owner: "Owner", support: "Support", billing: "Billing", content_editor: "Content Editor" };
@@ -92,5 +94,7 @@ export const CAP_LABEL: Record<Cap, string> = {
   "releases.manage": "Run maintenance and releases",
   "settings.manage": "Change settings",
   "audit.read_all": "See the whole audit log",
+  "pages.read": "See hosted pages (title, status, address) without their content",
+  "pages.takedown": "Disable or re-enable a hosted page after an abuse report",
   "audit.read_own": "See their own audit entries",
 };

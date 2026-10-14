@@ -105,7 +105,7 @@ export function removeRow<F extends Record<string, string>>(f: F, g: ContactGrou
 
 /** Every key the vCard type may carry. Anything else is rejected or dropped before saving. */
 export function vcardKeys(): Set<string> {
-  const s = new Set(["firstName", "lastName", "org", "title"]);
+  const s = new Set(["firstName", "lastName", "org", "title", "photo"]); // photo: small JPEG for the downloadable contact file only; never in the QR payload
   for (const g of GROUP_KEYS) for (let i = 1; i <= MAX_ROWS; i++) { s.add(valueKey(g, i)); s.add(typeKey(g, i)); }
   return s;
 }
@@ -151,4 +151,4 @@ export const telType = (t: string) => VTYPE[t] ?? "CELL";
 export const emailType = (t: string) => (t === "home" ? "INTERNET,HOME" : "INTERNET,WORK");
 
 /** vCard 3.0 text escaping (RFC 2426 section 5): backslash, semicolon, comma and newline. */
-export const vEsc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+export const vEsc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");

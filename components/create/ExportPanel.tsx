@@ -21,6 +21,7 @@ export default function ExportPanel({
   onBackToContent,
   onUpgradeFormat,
   planName,
+  contact,
 }: {
   preview: string | null;
   typeLabel: string;
@@ -37,6 +38,8 @@ export default function ExportPanel({
   onBackToContent: () => void;
   onUpgradeFormat: () => void;
   planName: string;
+  /** static contact codes: a separate downloadable .vcf that can carry the photo */
+  contact?: { hasPhoto: boolean; onDownload: () => void; state: string };
 }) {
   const locked = !allowedFormats.includes(format);
   const busy = dl.state === "pending";
@@ -142,6 +145,18 @@ export default function ExportPanel({
         </div>
       ) : null}
 
+      {contact ? (
+        <div className="mt-6 border-t border-divider pt-5">
+          <h3 className="mb-1 text-sm font-medium">Contact file</h3>
+          <p className="mb-3 text-[13px] text-muted">
+            {contact.hasPhoto
+              ? "The QR code carries your details without the photo so it scans reliably. This .vcf file includes your photo; share it by message or email. Most contacts apps import it with the photo."
+              : "A .vcf file you can send directly. Add a photo above to include it in this file; the QR code never carries a photo."}
+          </p>
+          <Button variant="secondary" className="w-full" onClick={contact.onDownload}>Download contact file (.vcf)</Button>
+          <p role="status" aria-live="polite" className="mt-2 text-[13px]">{contact.state}</p>
+        </div>
+      ) : null}
       <hr className="my-6 border-0 border-t border-divider" />
       <p className="text-[13px] text-muted">Scan the downloaded code with your phone before printing.</p>
     </aside>
