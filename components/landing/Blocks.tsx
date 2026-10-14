@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkButton } from "@/components/ui/Button";
 import type { Landing } from "@/lib/content";
 
 /** Presentational blocks shared by the public landing page and the editor preview. No data fetching here. */
@@ -26,10 +27,10 @@ const naira = (n: number) => `₦${n.toLocaleString("en-US")}`;
 export function PlansBlock({ plans }: { plans: PlanTeaser[] }) {
   return (
     <section aria-labelledby="plans-h" className="mb-14">
-      <h2 id="plans-h" className="mb-5 text-2xl font-medium">Need more than Free?</h2>
+      <h2 id="plans-h" className="mb-5 text-2xl font-medium">Simple plans for more needs</h2>
       <div className="grid gap-5 sm:grid-cols-2">
         {plans.map((p) => (
-          <article key={p.id} className="rounded-panel bg-surface p-6">
+          <article key={p.id} className="flex flex-col items-start gap-1 rounded-panel bg-soft p-6">
             <h3 className="mb-1 text-xl font-medium">{p.name}</h3>
             <p className="mb-4 text-muted">{p.blurb}</p>
             {p.firstPriceNgn < p.baseNgn ? (
@@ -47,11 +48,14 @@ export function PlansBlock({ plans }: { plans: PlanTeaser[] }) {
                 {naira(p.baseNgn)} <span className="text-base font-normal text-muted">/ 30 days</span>
               </p>
             )}
+            <LinkButton href="/pricing" variant="secondary" className="mt-4" aria-label={`View ${p.name} plan`}>
+              View plan
+            </LinkButton>
           </article>
         ))}
       </div>
       <p className="mt-4 text-sm">
-        <Link href="/pricing" className="font-medium text-brand">Compare plans</Link>
+        <Link href="/pricing" className="font-medium text-brand">Compare all plans</Link>
       </p>
     </section>
   );
@@ -61,7 +65,7 @@ export function FaqBlock({ faq }: { faq: Landing["faq"] }) {
   if (!faq.length) return null;
   return (
     <section aria-labelledby="faq-h" className="mb-14 max-w-[800px]">
-      <h2 id="faq-h" className="mb-3 text-2xl font-medium">Before you print</h2>
+      <h2 id="faq-h" className="mb-3 text-2xl font-medium">Frequently asked questions</h2>
       {faq.map((f, i) => (
         <details key={f.q} open={i === 0} className="border-b border-divider py-4">
           <summary className="cursor-pointer font-medium">{f.q}</summary>

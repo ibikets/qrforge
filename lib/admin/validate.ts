@@ -19,7 +19,7 @@ export function str(b: Body, k: string, o: { min?: number; max: number; optional
   if (t.length < (o.min ?? 1)) throw fail(422, `${o.label ?? k} is too short.`, k);
   if (t.length > o.max) throw fail(422, `${o.label ?? k} must be ${o.max} characters or fewer.`, k);
   // control characters are never legitimate in these fields
-  // eslint-disable-next-line no-control-regex
+   
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(t)) throw fail(422, `${o.label ?? k} contains characters that are not allowed.`, k);
   return t;
 }

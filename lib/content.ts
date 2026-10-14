@@ -36,7 +36,7 @@ export const LIMITS = { headline: 90, support: 160, cta: 40, freeNote: 120, uses
 
 type R = { ok: true; data: Landing } | { ok: false; error: string; field: string };
 const bad = (field: string, error: string): R => ({ ok: false, field, error });
-// eslint-disable-next-line no-control-regex
+ 
 const CTRL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
 const MARKUP = /[<>]/;
 

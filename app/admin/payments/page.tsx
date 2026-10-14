@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge, DataTable, Denied, Empty, LoadError, PageHead, Panel, Td, kobo, lagos, linkCls } from "@/components/admin/kit";
 import { currentStaff } from "@/lib/admin/guard";
-import { adm, load, one, PAGE_SIZE, pageNum, q } from "@/lib/admin/read";
+import { adm, load, one, PAGE_SIZE, pageNum } from "@/lib/admin/read";
 
 type P = { reference: string; user_id: string; plan: string; amount_kobo: number; base_kobo: number | null; discount_kobo: number; status: string; created_at: string };
 

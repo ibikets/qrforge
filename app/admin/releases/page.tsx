@@ -1,4 +1,4 @@
-import { Badge, Blocked, DataTable, Denied, Empty, KV, LoadError, Notice, PageHead, Panel, Td, lagos } from "@/components/admin/kit";
+import { Badge, Blocked, DataTable, Denied, Empty, KV, Notice, PageHead, Panel, Td, lagos } from "@/components/admin/kit";
 import { ActionButton } from "@/components/admin/Mutation";
 import { currentStaff } from "@/lib/admin/guard";
 import { adm, load, q } from "@/lib/admin/read";
