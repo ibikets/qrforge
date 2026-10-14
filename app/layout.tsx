@@ -3,7 +3,7 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 import "./globals.css";
 import AuthNav from "@/components/AuthNav";
-import NavShell from "@/components/NavShell";
+import NavFallback from "@/components/NavFallback";
 import SiteFooter from "@/components/SiteFooter";
 import PublicFooter from "@/components/PublicFooter";
 
@@ -47,16 +47,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <Suspense fallback={<NavShell email={undefined} />}>
+        <Suspense fallback={<NavFallback />}>
           <AuthNav />
         </Suspense>
         <div className="shell-main flex min-h-dvh flex-col">
           <main id="main" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
-          <PublicFooter>
-            <SiteFooter />
-          </PublicFooter>
+          <Suspense fallback={null}>
+            <PublicFooter>
+              <SiteFooter />
+            </PublicFooter>
+          </Suspense>
         </div>
       </body>
     </html>
