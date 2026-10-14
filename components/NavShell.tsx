@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import Dialog from "@/components/ui/Dialog";
-import SignOut from "@/components/SignOut";
+import AccountMenu, { AccountRows } from "@/components/AccountMenu";
 import Logo from "@/components/Logo";
 import IdleSignOut from "@/components/IdleSignOut";
 
@@ -21,7 +21,6 @@ const signedInPublic: Item[] = [
   { href: "/create", label: "Create" },
   { href: "/codes", label: "My codes" },
   { href: "/pricing", label: "Pricing" },
-  { href: "/account", label: "Account" },
 ];
 const anon: Item[] = [
   { href: "/create", label: "Create" },
@@ -72,14 +71,20 @@ export default function NavShell({
             ))}
           </nav>
           <div className="mt-auto text-sm">
-            <p className="break-words text-muted" title={email ?? undefined}>
-              {email}
-            </p>
-            <Link href="/pricing" className="text-brand">
+            <Link
+              href="/pricing"
+              className="mb-2 block px-1 font-medium text-brand no-underline hover:text-brand-hover"
+            >
               View plans
             </Link>
-            <div className="mt-3">
-              <SignOut />
+            <div className="flex items-center gap-2 border-t border-divider pt-3">
+              {email ? <AccountMenu email={email} placement="up" /> : null}
+              <p
+                className="min-w-0 break-words text-[13px] text-muted"
+                title={email ?? undefined}
+              >
+                {email}
+              </p>
             </div>
           </div>
         </aside>
@@ -143,7 +148,7 @@ function TopBar({
         <nav aria-label="Main" className="flex items-center gap-6">
           <div className="hidden items-center gap-6 sm:flex">
             {items.map(link)}
-            {email ? <SignOut /> : null}
+            {email ? <AccountMenu email={email} /> : null}
           </div>
           <button
             type="button"
@@ -169,9 +174,7 @@ function TopBar({
             </Link>
           ))}
           {email ? (
-            <div className="px-4 pt-2">
-              <SignOut />
-            </div>
+            <AccountRows email={email} onNavigate={() => setMenu(false)} />
           ) : null}
         </nav>
         <button
