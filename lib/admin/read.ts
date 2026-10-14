@@ -23,3 +23,9 @@ export const pageNum = (v: string | string[] | undefined) => {
   return Number.isInteger(n) && n >= 1 && n <= 10_000 ? n : 1;
 };
 export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+
+/** A read that must return something: null is a failure, not an empty page. */
+export function need<T>(v: T | null | undefined): T {
+  if (v == null) throw new Error("empty result");
+  return v;
+}

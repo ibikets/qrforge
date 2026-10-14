@@ -13,7 +13,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   const term = one(sp.q).trim().slice(0, 80);
   const status = STATUSES.includes(one(sp.status)) ? one(sp.status) : "";
   const page = pageNum(sp.page);
-  const rows = await load(async () => q(await adm().rpc("list_customers", { p_q: term, p_status: status, p_limit: PAGE_SIZE, p_offset: (page - 1) * PAGE_SIZE })) as Row[]);
+  const rows = await load(async () => (q(await adm().rpc("list_customers", { p_q: term, p_status: status, p_limit: PAGE_SIZE, p_offset: (page - 1) * PAGE_SIZE })) ?? []) as Row[]);
   const filtered = Boolean(term || status);
   const total = rows.ok && rows.data[0] ? Number(rows.data[0].total) : 0;
   const link = (p: number) => `/admin/customers?${new URLSearchParams({ ...(term ? { q: term } : {}), ...(status ? { status } : {}), page: String(p) })}`;

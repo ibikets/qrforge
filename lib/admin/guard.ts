@@ -112,7 +112,7 @@ export function adminActions(actions: Record<string, ActionSpec>) {
     const name = typeof body.action === "string" ? body.action : "";
     const spec = Object.hasOwn(actions, name) ? actions[name] : undefined;
     if (!spec) return json(400, { error: "Unknown action." });
-    const limited = rateLimit(req, "admin", spec.limit ?? 60, 60_000, staff.userId);
+    const limited = rateLimit(req, `admin:${name}`, spec.limit ?? 60, 60_000, staff.userId);
     if (limited) return limited;
     if (!staff.caps.has(spec.cap)) return json(403, { error: "Your staff role cannot do this." });
     if (STEP_UP.has(spec.cap) && Date.now() - staff.signedInAt > STEP_UP_MAX_AGE_MS)

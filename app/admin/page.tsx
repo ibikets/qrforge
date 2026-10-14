@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge, DataTable, Denied, Empty, KV, LoadError, PageHead, Panel, Td, kobo, lagos, linkCls } from "@/components/admin/kit";
 import { currentStaff } from "@/lib/admin/guard";
-import { adm, load, q } from "@/lib/admin/read";
+import { adm, load, need, q } from "@/lib/admin/read";
 
 export default async function Overview() {
   const s = await currentStaff();
@@ -9,7 +9,7 @@ export default async function Overview() {
   const { caps, userId } = s.staff;
   const asOf = new Date();
   const from = new Date(asOf.getTime() - 30 * 24 * 3600_000).toISOString();
-  const stats = await load(async () => q(await adm().rpc("stats_summary", { p_from: from, p_to: asOf.toISOString() })) as Record<string, number>);
+  const stats = await load(async () => need(q(await adm().rpc("stats_summary", { p_from: from, p_to: asOf.toISOString() }))) as Record<string, number>);
   const audit = await load(async () => {
     let query = adm().from("audit_events").select("id,at,actor_email,action,target_type,target_id").order("id", { ascending: false }).limit(8);
     if (!caps.has("audit.read_all")) query = query.eq("actor_id", userId);

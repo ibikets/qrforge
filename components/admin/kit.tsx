@@ -36,7 +36,7 @@ export function Panel({ title, children, aside }: { title?: string; children: Re
 /** The table scrolls inside a labelled, keyboard-focusable region; the page itself never overflows. */
 export function DataTable({ label, head, children, empty }: { label: string; head: string[]; children: ReactNode; empty?: ReactNode }) {
   return (
-    <div role="region" aria-label={label} tabIndex={0} className="overflow-x-auto rounded-control outline-offset-2">
+    <div role="region" aria-label={label} tabIndex={0} className="relative overflow-x-auto rounded-control outline-offset-2">
       <table className="w-full min-w-[560px] border-collapse text-left text-[15px]">
         <caption className="sr-only">{label}</caption>
         <thead>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Blocked, DataTable, Denied, Empty, KV, LoadError, PageHead, Panel, Td, kobo, lagos, linkCls } from "@/components/admin/kit";
 import { currentStaff } from "@/lib/admin/guard";
-import { adm, load, one, q } from "@/lib/admin/read";
+import { adm, load, need, one, q } from "@/lib/admin/read";
 
 const RANGES = [7, 30, 90];
 
@@ -13,8 +13,8 @@ export default async function Statistics({ searchParams }: { searchParams: Promi
   const days = RANGES.includes(Number(one(sp.days))) ? Number(one(sp.days)) : 30;
   const to = new Date();
   const from = new Date(to.getTime() - days * 24 * 3600_000);
-  const stats = await load(async () => q(await adm().rpc("stats_summary", { p_from: from.toISOString(), p_to: to.toISOString() })) as Record<string, number>);
-  const daily = caps.has("stats.financial") ? await load(async () => q(await adm().rpc("payments_by_day", { p_from: from.toISOString(), p_to: to.toISOString() })) as { day: string; payments: number; gross_kobo: number; discount_kobo: number }[]) : null;
+  const stats = await load(async () => need(q(await adm().rpc("stats_summary", { p_from: from.toISOString(), p_to: to.toISOString() }))) as Record<string, number>);
+  const daily = caps.has("stats.financial") ? await load(async () => (q(await adm().rpc("payments_by_day", { p_from: from.toISOString(), p_to: to.toISOString() })) ?? []) as { day: string; payments: number; gross_kobo: number; discount_kobo: number }[]) : null;
   const st = stats.ok ? stats.data : null;
   const max = daily?.ok ? Math.max(1, ...daily.data.map((d) => Number(d.gross_kobo))) : 1;
 
