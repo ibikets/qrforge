@@ -22,6 +22,7 @@ export default function Home() {
     <div className="mx-auto max-w-[1280px] px-5 py-8 sm:px-10 sm:py-10">
       <section className="grid items-center gap-8 pb-12 min-[900px]:grid-cols-[1fr_360px] min-[900px]:gap-16 min-[900px]:pt-6">
         <div>
+          <p className="mb-3 text-sm font-medium uppercase tracking-wider text-brand">Create a code. Make a connection.</p>
           <h1 className="mb-3 max-w-[650px] text-[28px] font-semibold leading-tight tracking-[-0.9px] sm:text-[48px] sm:leading-[1.15]">
             QR codes for everyday business.
           </h1>

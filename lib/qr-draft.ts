@@ -19,6 +19,7 @@ export type Draft = {
   logoName: string | null;
 };
 
+// Storage keys keep the legacy "qrf:" prefix on purpose: renaming would orphan a draft saved before sign-in. Brand-neutral.
 const KEY = "qrf:draft";
 const RETURN_KEY = "qrf:return";
 export const DRAFT_TTL_MS = 30 * 60 * 1000;

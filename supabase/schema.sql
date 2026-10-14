@@ -1,4 +1,4 @@
--- QRForge: dedicated schema, so it stays isolated from other apps in the same Supabase project.
+-- Qrenuvi: dedicated schema, so it stays isolated from other apps in the same Supabase project.
 -- Run this once in the Supabase SQL editor.
 
 create schema if not exists qrforge;

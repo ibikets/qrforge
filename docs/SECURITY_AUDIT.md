@@ -1,4 +1,4 @@
-# QRFORGE security audit (14 October 2026)
+# Qrenuvi security audit (14 October 2026)
 
 Scope: code at `2119e54` (the deployed commit) plus this branch's changes, the Supabase project's policies and grants (read-only), Vercel project settings (read-only), dependencies, and Paystack's public webhook documentation. This reduces risk; it does not prove the absence of vulnerabilities.
 

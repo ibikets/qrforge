@@ -16,7 +16,7 @@ export default function Pricing() {
       <h1 className="mb-3 text-[28px] font-semibold leading-tight tracking-[-0.9px] sm:text-[40px]">Clear pricing. Pay in Naira.</h1>
       <p className="max-w-[640px] text-lg text-muted">Choose a 30-day pass. Auto-renewal is optional.</p>
       <p className="mt-2 max-w-[640px] text-sm text-muted">
-        Payments go through Paystack. The payment methods you see at checkout are the ones enabled for this store.
+        Payments are processed securely by Paystack.
       </p>
       <Suspense fallback={<div className="mt-10 h-80 rounded-panel bg-disabled" aria-busy="true" />}>
         <Plans />

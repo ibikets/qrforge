@@ -1,4 +1,4 @@
--- QRForge: database-enforced entitlements and atomic payment application.
+-- Qrenuvi: database-enforced entitlements and atomic payment application.
 -- Apply in one transaction (Supabase `apply_migration` does this). Rollback: supabase/rollback/20261014000000_atomic_limits.down.sql
 -- Safe ordering: the app falls back to its previous behaviour if this is not yet applied, so migrate first, then deploy.
 begin;

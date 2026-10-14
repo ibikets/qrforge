@@ -1,6 +1,6 @@
 # Prompt to give GPT (paste this, then attach BLUEPRINT.md and the code zip)
 
-You are a senior product designer and front-end designer. I have a working QR code generator SaaS called QRForge (Next.js 16, React 19, Tailwind CSS v4). The functionality is built and works, but the design is a bare, near-monochrome form with no brand. I need a complete UX/UI design that can be implemented in this exact codebase.
+You are a senior product designer and front-end designer. I have a working QR code generator SaaS called Qrenuvi (Next.js 16, React 19, Tailwind CSS v4). The functionality is built and works, but the design is a bare, near-monochrome form with no brand. I need a complete UX/UI design that can be implemented in this exact codebase.
 
 I'm attaching:
 1. BLUEPRINT.md: the product, plans, routes, every screen and state, current design problems, constraints and data model.
@@ -14,7 +14,7 @@ Small businesses, creators, restaurants, churches, events and freelancers in Nig
 ## What I want you to deliver
 
 1. **Design direction** (one page): the concept, mood, 3 adjectives, and why it suits the audience. Propose one direction only and commit to it.
-2. **Brand kit**: wordmark and logo mark idea for "QRForge", colour palette with exact hex values for light and dark mode (primary, accent, surface, border, text, success, warning, danger, and a Pro/Business tier colour), font pairing (Google Fonts only), type scale, spacing scale, radii, shadows and an icon set recommendation (for example Lucide).
+2. **Brand kit**: wordmark and logo mark idea for "Qrenuvi", colour palette with exact hex values for light and dark mode (primary, accent, surface, border, text, success, warning, danger, and a Pro/Business tier colour), font pairing (Google Fonts only), type scale, spacing scale, radii, shadows and an icon set recommendation (for example Lucide).
 3. **Component library spec**: buttons (primary, secondary, ghost, destructive, loading), inputs, textarea, select, checkbox, switch, slider, colour picker, file drop zone for the logo, type-picker chips/tabs, cards, modal, toast, skeleton, empty state, tier tags, usage meter, header and footer. Give every component its states (default, hover, focus, disabled, error).
 4. **All screens** in BLUEPRINT.md section 5, including the ones in 5.7 that don't exist yet, at 1440, 768 and 390 widths, with empty, loading, error and success states:
    - Landing page (new, with hero, live mini-demo, how it works, QR type gallery, pricing teaser, FAQ, footer)

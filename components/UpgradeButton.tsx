@@ -56,7 +56,7 @@ export default function UpgradeButton({
   return (
     <>
       <Button className="w-full" onClick={go} disabled={busy}>
-        {busy ? "Opening Paystack…" : !signedIn ? `Sign in to choose ${PLANS[plan].name}` : label}
+        {busy ? "Opening checkout…" : !signedIn ? `Sign in to choose ${PLANS[plan].name}` : label}
       </Button>
       {err ? (
         <p role="alert" className="mt-2 text-sm text-danger">

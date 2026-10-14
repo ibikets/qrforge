@@ -24,15 +24,15 @@ export default function PricingGrid({ current, signedIn }: { current: PlanId; si
         <label className="flex items-start gap-3 rounded-panel bg-surface p-4">
           <input type="checkbox" className="mt-0.5 size-6 shrink-0" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />
           <span>
-            <strong>Renew automatically every 30 days.</strong> I authorise QRForge to charge the card I pay with at each renewal, at the plan price shown. I
+            <strong>Renew automatically every 30 days.</strong> I authorise Qrenuvi to charge the card I pay with at each renewal, at the plan price shown. I
             can cancel anytime from Billing. (Card payments only.)
           </span>
         </label>
         <div role="status" aria-live="polite">
           {autoRenew ? (
-            <Notice title="Card payments for auto-renewal">Turn renewal off to use other available Paystack payment methods.</Notice>
+            <Notice title="Card payments for auto-renewal">Turn renewal off to pay with other available methods.</Notice>
           ) : (
-            <Notice title="One-off 30-day pass">Auto-renewal is off. Paystack will show the payment methods available to this merchant.</Notice>
+            <Notice title="One-off 30-day pass">Auto-renewal is off. You will choose from the available payment methods at checkout.</Notice>
           )}
         </div>
       </div>

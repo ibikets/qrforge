@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* QRFORGE Working Desk / Forest tokens (light mode only; no automatic dark override). */
+/* Qrenuvi Working Desk / Forest tokens (light mode only; no automatic dark override). */
 :root {
   --qrf-canvas: #f8f7f3;
   --qrf-surface: #ffffff;

@@ -1,4 +1,4 @@
-# QRForge
+# Qrenuvi
 
 QR code generator (URL, text, email, phone, SMS, WhatsApp, WiFi, vCard) with PNG/SVG/PDF export, logo, colours, and paid plans via Paystack.
 

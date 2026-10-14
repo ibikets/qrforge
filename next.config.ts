@@ -37,6 +37,10 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  // Crawlers and old clients still request /favicon.ico directly.
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/icons/favicon.ico" }];
+  },
   async headers() {
     return [
       {
@@ -52,6 +56,11 @@ const nextConfig: NextConfig = {
       },
       // account data and file downloads must never be stored by shared caches
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      // Brand artwork and icons are not content-hashed, so cache for a day and revalidate in the background.
+      ...["/icons/:path*", "/brand/:path*"].map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      })),
     ];
   },
 };

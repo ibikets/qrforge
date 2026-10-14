@@ -1,4 +1,4 @@
-# QRFORGE launch readiness (14 October 2026)
+# Qrenuvi launch readiness (14 October 2026)
 
 ## 1. State and evidence ledger
 

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import Dialog from "@/components/ui/Dialog";
 import SignOut from "@/components/SignOut";
+import Logo from "@/components/Logo";
 
 const WORKSPACE = ["/create", "/codes", "/billing", "/account"];
 
@@ -32,9 +33,7 @@ export default function NavShell({ email }: { email: string | null }) {
       <>
         {/* desktop rail */}
         <aside data-rail className="fixed inset-y-0 left-0 z-30 hidden w-54 flex-col gap-8 border-r border-divider bg-canvas px-6 py-8 min-[1000px]:flex">
-          <Link href="/" className="text-2xl font-semibold tracking-tight no-underline text-ink">
-            QRFORGE
-          </Link>
+          <Logo variant="horizontal" className="self-start" />
           <nav aria-label="Workspace" className="grid gap-2.5">
             {authed.map((i) => (
               <Link
@@ -90,9 +89,7 @@ function TopBar({
   );
   return (
     <header className={`flex items-center justify-between gap-6 border-b border-divider bg-surface px-5 py-4 sm:px-8 ${className}`}>
-      <Link href="/" className="text-xl font-semibold tracking-tight text-ink no-underline sm:text-2xl">
-        QRFORGE
-      </Link>
+      <Logo variant="horizontal" />
       <nav aria-label="Main" className="flex items-center gap-6">
         <div className="hidden items-center gap-6 sm:flex">
           {items.map(link)}

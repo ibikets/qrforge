@@ -1,4 +1,4 @@
-# QRForge: Product and Technical Blueprint
+# Qrenuvi: Product and Technical Blueprint
 
 A QR code generator SaaS (modelled on myqrcode.com/create) with Free, Pro and Business plans, paid in Naira through Paystack. Built for Nigerian users. This document is the source of truth for what exists today, so a designer can create every screen and the result can be built without guessing.
 
@@ -67,7 +67,7 @@ Style options: QR colour, background colour, dot style (Square / Rounded / Dots)
 | `/api/billing/auto-renew` | Signed in | POST toggle. |
 | `/api/cron/renew` | Cron secret | Daily renewal charges. |
 
-Global shell: header (logo "QRForge" left; Pricing link; AuthNav on the right) and a footer. AuthNav shows "Sign in" when signed out, and My codes / Billing / Sign out when signed in.
+Global shell: header (logo "Qrenuvi" left; Pricing link; AuthNav on the right) and a footer. AuthNav shows "Sign in" when signed out, and My codes / Billing / Sign out when signed in.
 
 ## 5. Screens and their states (everything a designer must cover)
 
