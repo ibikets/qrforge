@@ -188,6 +188,7 @@ http.createServer(async (req, res) => {
 http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/domains") return json(res, 200, { data: [{ name: "bitzpark.com", status: state.emailMode === "unverified" ? "pending" : "verified" }] });
+  if (/^\/emails\/[0-9a-f-]{36}$/.test(u.pathname) && req.method === "GET") return json(res, 200, { last_event: state.emailMode === "bounce" ? "bounced" : "delivered" });
   if (u.pathname === "/emails" && req.method === "POST") {
     const b = await body(req);
     state.log.push({ op: "email", key: req.headers["idempotency-key"], auth: (req.headers.authorization ?? "").slice(0, 7), to: b?.to, subject: b?.subject, text: b?.text, reply_to: b?.reply_to });
@@ -195,7 +196,7 @@ http.createServer(async (req, res) => {
     if (m === "403") return json(res, 403, { message: "The bitzpark.com domain is not verified." });
     if (m === "429") return json(res, 429, { message: "rate limit" });
     if (m === "500") return json(res, 500, { message: "boom" });
-    return json(res, 200, { id: "msg_" + crypto.randomUUID().slice(0, 8) });
+    return json(res, 200, { id: crypto.randomUUID() });
   }
   json(res, 404, {});
 }).listen(54323);

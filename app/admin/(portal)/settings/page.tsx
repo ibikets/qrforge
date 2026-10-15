@@ -1,4 +1,5 @@
 import { Badge, DataTable, Denied, KV, LoadError, Notice, PageHead, Panel, Td, lagos } from "@/components/admin/kit";
+import TestEmail from "@/components/admin/TestEmail";
 import { ActionButton, EditorForm } from "@/components/admin/Mutation";
 import { SETTING_KEYS } from "@/lib/admin/consts";
 import { currentStaff } from "@/lib/admin/guard";
@@ -50,6 +51,7 @@ export default async function Settings() {
             <tr key={c.name}><Td>{c.name}</Td><Td><Badge tone={c.state === "verified" ? "good" : c.state === "failed" ? "bad" : "warn"}>{c.state === "verified" ? "Working" : c.state === "failed" ? "Problem" : "Not verified"}</Badge></Td><Td>{c.detail}</Td><Td>{lagos(c.checkedAt)}</Td></tr>
           ))}
         </DataTable>
+        <TestEmail />
         <h3 className="mb-2 mt-6 font-medium">Present on this deployment</h3>
         <KV items={p.flags.map(([n, ok]) => [n, <Badge key={n} tone={ok ? "good" : "warn"}>{ok ? "Set" : "Not set"}</Badge>])} />
         <h3 className="mb-2 mt-6 font-medium">Addresses the providers must have</h3>

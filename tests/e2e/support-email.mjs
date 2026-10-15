@@ -32,4 +32,17 @@ ok(/Reply sent by email to tester@example.com/.test(page), "ticket page shows wh
 const audit = (await ctl()).log.filter((l) => l.op === "insert" && l.table === "audit_events").map((l) => l.rows?.[0]?.action);
 ok(audit.includes("ticket.reply_failed") && audit.includes("ticket.reply_sent"), `both outcomes are audited (${audit.join(",")})`);
 ok(!JSON.stringify((await ctl()).log).includes("test_key_not_real"), "the provider key never appears in recorded traffic or audit");
+// Staff test send: goes only to the support address, labelled, and reports the provider's delivery status.
+const st = async (cookie, body, origin = BASE) => { const r = await fetch(BASE + "/api/admin/settings", { method: "POST", headers: { "content-type": "application/json", cookie, origin }, body: JSON.stringify(body) }); return { s: r.status, j: await r.json().catch(() => ({})) }; };
+const before = (await logs()).length;
+ok((await st(await as(IDS.support, "support@example.com"), { action: "send_test_email" })).s === 403, "support role cannot trigger the test send");
+const owner = await as(IDS.owner, "owner@example.com");
+ok((await st(owner, { action: "send_test_email", to: "victim@example.com" }, "https://evil.example")).s === 403, "test send: cross-site refused");
+const t = await st(owner, { action: "send_test_email", to: "victim@example.com" });
+const tl = (await logs()).slice(before);
+ok(t.s === 200 && t.j.lastEvent === "delivered" && tl.length === 1 && JSON.stringify(tl[0].to) === '["qrenuvi@bitzpark.com"]' && /\[Qrenuvi TEST\]/.test(tl[0].subject), `test send: only to the support address, labelled, provider status shown (${t.s} ${t.j.lastEvent})`);
+await ctl({ set: { emailMode: "bounce" } });
+const tb = await st(owner, { action: "test_email_status", id: t.j.id });
+ok(tb.s === 200 && tb.j.lastEvent === "bounced", "status refresh reports a bounce honestly");
+await ctl({ set: { emailMode: "ok" } });
 console.log(bad ? `${bad} FAILED` : "all passed"); process.exit(bad ? 1 : 0);

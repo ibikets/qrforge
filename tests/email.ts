@@ -6,7 +6,15 @@ async function main() {
   const srv = http.createServer(async (req, res) => {
     const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
-    if (req.url === "/domains") { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ data: [{ name: "bitzpark.com", status: mode === "unverified" ? "pending" : "verified" }] })); }
+    const j = (st: number, o: object) => { res.writeHead(st, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+    if (req.url === "/domains") {
+      if (mode === "restricted") return j(401, { name: "restricted_api_key", message: "This API key is restricted to only send emails" });
+      if (mode === "rejected") return j(401, { name: "validation_error", message: "API key is invalid" });
+      if (mode === "other") return j(200, { data: [{ id: "d2", name: "other.example", status: "verified" }] });
+      return j(200, { data: [{ id: "d1", name: "bitzpark.com", status: mode === "unverified" ? "pending" : mode === "failed" ? "failed" : "verified" }] });
+    }
+    if (req.url === "/domains/d1") return j(200, { records: [{ name: "resend._domainkey", type: "TXT", status: mode === "ok" ? "verified" : "not_started" }, { name: "send", type: "MX", status: "verified" }] });
+    if (req.url === "/emails/11111111-1111-1111-1111-111111111111") return j(200, { last_event: "delivered" });
     seen.push({ headers: req.headers, body });
     const send = (s: number, j: object) => { res.writeHead(s, { "content-type": "application/json" }); res.end(JSON.stringify(j)); };
     if (mode === "403") return send(403, { message: "The bitzpark.com domain is not verified." });
@@ -37,7 +45,17 @@ async function main() {
   ok(!(await sendEmail({ ...m, subject: "a\r\nBcc: x@y.z" })).ok, "header injection in the subject is refused");
   ok(!(await sendEmail({ ...m, to: "not an email" })).ok, "invalid recipient is refused");
   ok((await senderDomainStatus()).state === "verified", "domain check: verified only when the provider says so");
-  mode = "unverified"; ok((await senderDomainStatus()).state === "failed", "domain check: pending is reported as not verified");
+  mode = "unverified";
+  const pend = await senderDomainStatus();
+  ok(pend.state === "unverified" && /pending/.test(pend.detail) && /TXT resend\._domainkey/.test(pend.detail) && !/MX send/.test(pend.detail), "pending: names the exact unresolved record and not the verified ones");
+  mode = "failed"; ok((await senderDomainStatus()).state === "failed", "failed verification is reported as failed");
+  mode = "restricted"; const rs = await senderDomainStatus(); ok(rs.state === "unverified" && /send-only/.test(rs.detail), "send-only key: unverified, not failed, points to the test send");
+  mode = "rejected"; ok(/rejected the key/.test((await senderDomainStatus()).detail), "provider rejection is distinguished");
+  mode = "other"; ok(/not added in this email account/.test((await senderDomainStatus()).detail), "domain absent from the account is distinguished");
+  mode = "ok"; const vv = await senderDomainStatus(); ok(vv.state === "verified" && /Qrenuvi Support <qrenuvi@bitzpark\.com>/.test(vv.detail) && !vv.detail.includes("test_key_not_real"), "verified detail shows From and never the key");
+  const { emailStatus } = await import("../lib/email");
+  const es = await emailStatus("11111111-1111-1111-1111-111111111111"); ok(es.ok && es.lastEvent === "delivered", "message status read from provider");
+  ok(!(await emailStatus("../domains")).ok, "message id is validated before use in a URL");
   process.env.RESEND_API_URL = "http://127.0.0.1:1"; // unreachable
   srv.close();
   console.log(bad ? `${bad} FAILED` : "all passed"); process.exit(bad ? 1 : 0);
