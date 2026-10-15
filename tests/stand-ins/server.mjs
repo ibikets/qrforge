@@ -18,6 +18,7 @@ function filterRows(rows, params) {
   let out = rows;
   for (const [k, v] of params) {
     if (["select", "order", "limit", "offset", "columns"].includes(k)) continue;
+    if (/^not\.is\.null$/.test(v)) { out = out.filter((r) => r[k] != null); continue; }
     const m = /^(eq|neq|gt|gte|lt|lte|is|in)\.(.*)$/.exec(v);
     if (!m) continue;
     const [, op, val] = m;
@@ -165,6 +166,10 @@ http.createServer(async (req, res) => {
         const max = sub?.plan === "business" ? 25 : sub ? 5 : 0;
         if (state.tables.pages.filter((x) => x.user_id === r.user_id && x.lifecycle !== "deleted").length >= max) return json(res, 400, { code: "QF010", message: "hosted page limit reached" });
       }
+    }
+    if (table === "import_jobs") {
+      for (const r of rows) { if ((state.tables.import_jobs ?? []).some((x) => x.user_id === r.user_id && x.idem_key === r.idem_key)) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" }); }
+      state.tables.import_jobs ??= [];
     }
     if (table === "links") {
       for (const r of rows) {

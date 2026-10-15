@@ -21,4 +21,10 @@ for (const [id, p] of Object.entries(PLANS)) {
   const got = m ? m[1] : "missing";
   if (String(p.maxLinks) !== got) { bad++; console.log("FAIL links", id, { want: p.maxLinks, got }); } else console.log("PASS links", id, got);
 }
+const ci = fs.readFileSync(new URL("../supabase/migrations/20261020000000_content_import.sql", import.meta.url), "utf8");
+for (const [id, p] of Object.entries(PLANS)) {
+  const m = new RegExp(`set max_import_rows = (\\d+) where plan = '${id}'`).exec(ci);
+  const got = m ? m[1] : "missing";
+  if (String(p.maxImportRows) !== got) { bad++; console.log("FAIL import rows", id, { want: p.maxImportRows, got }); } else console.log("PASS import rows", id, got);
+}
 process.exit(bad ? 1 : 0);

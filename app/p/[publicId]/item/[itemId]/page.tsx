@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LuArrowLeft, LuMail, LuMessageCircle } from "react-icons/lu";
+import { LuArrowLeft, LuExternalLink, LuMail, LuMessageCircle } from "react-icons/lu";
 import { cardVars } from "@/components/pages/card-theme";
 import { ACCENTS } from "@/lib/pages/card";
 import { readPageSnapshot } from "@/lib/pages/blocks";
@@ -64,6 +64,7 @@ async function Product({ params }: { params: Promise<{ publicId: string; itemId:
         <div className="flex flex-col gap-2">
           {links.whatsapp ? <a className={`${act} !bg-[#0e7a3f] !text-white hover:brightness-110`} href={links.whatsapp} rel="noopener noreferrer" target="_blank"><LuMessageCircle aria-hidden="true" size={20} /> Ask about this on WhatsApp</a> : null}
           {links.email ? <a className={`${act} border border-[var(--qc-line)] bg-white text-ink hover:bg-[var(--qc-tint)]`} href={links.email}><LuMail aria-hidden="true" size={20} /> Ask about this by email</a> : null}
+          {item.href ? <a className={`${act} border border-[var(--qc-line)] bg-white text-ink hover:bg-[var(--qc-tint)]`} href={item.href} rel="noopener noreferrer nofollow ugc" target="_blank"><LuExternalLink aria-hidden="true" size={20} /> More details <span className="sr-only">(opens the seller’s own website)</span></a> : null}
         </div>
         <p className="mt-4 text-xs text-muted">Asking opens your own WhatsApp or email app with a message about this product. Payment and delivery are arranged directly with the seller; nothing is bought on this page.</p>
       </div>

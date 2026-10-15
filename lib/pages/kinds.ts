@@ -88,7 +88,7 @@ function fromPageSnapshot(kind: BlockKind, s: PageSnapshot): PageContent {
       case "gallery": return { ...base, type: "gallery", heading: b.heading, items: b.items.map((i) => ({ id: i.id, imageId: i.imageId, caption: i.caption, alt: i.alt, meta: { w: i.w, h: i.h } })) };
       case "entries": return { ...base, type: "entries", heading: b.heading, items: b.items };
       case "items": return { ...base, type: "items", heading: b.heading, currency: b.currency, categories: b.categories.map((cat) => ({ id: cat.id, name: cat.name,
-        items: cat.items.map((i) => ({ id: i.id, name: i.name, description: i.description, price: i.price === null ? "" : String(i.price), imageId: i.imageId, meta: i.imageId && i.w && i.h ? { w: i.w, h: i.h } : null, status: i.status, tags: i.tags })) })) };
+        items: cat.items.map((i) => ({ id: i.id, name: i.name, description: i.description, price: i.price === null ? "" : String(i.price), imageId: i.imageId, meta: i.imageId && i.w && i.h ? { w: i.w, h: i.h } : null, status: i.status, tags: i.tags, ref: i.ref, link: i.href ?? "" })) })) };
       case "event": return { ...base, type: "event", startsAt: b.startsAt, endsAt: b.endsAt, timezone: b.timezone, online: b.online };
       case "offer": return { ...base, type: "offer", title: b.title, code: b.code, description: b.description, validFrom: b.validFrom, validUntil: b.validUntil, timezone: b.timezone, conditions: b.conditions };
     }

@@ -34,7 +34,7 @@ ok(formatPrice(5, "XXX").includes("5"), "unknown currency falls back, never thro
   const it = get(c, "items");
   it.categories[0].name = "Mains";
   Object.assign(it.categories[0].items[0], { name: "Jollof rice", price: "3,500", description: "Smoky party jollof", tags: ["halal", "spicy"], status: "limited" });
-  it.categories[0].items.push({ id: "i2", name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [] });
+  it.categories[0].items.push({ id: "i2", name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [], ref: "", link: "" });
   const snap = snapshotOfContent(c);
   const pub = snap.blocks.find((b) => b.type === "items");
   ok(pub?.type === "items" && pub.categories[0].items.length === 1 && pub.categories[0].items[0].price === 3500, "snapshot keeps finished items and numeric price");
@@ -85,7 +85,7 @@ ok(formatPrice(5, "XXX").includes("5"), "unknown currency falls back, never thro
   ok(!!validateContent(c, false)[`${it.id}.items.${it.categories[0].items[0].id}`], "an invalid price is an error even in a draft");
   it.categories[0].items[0].price = ""; it.categories[0].items[0].description = "no name";
   ok(!!validateContent(c, true)[`${it.id}.items.${it.categories[0].items[0].id}`] && !validateContent(c, false)[`${it.id}.items.${it.categories[0].items[0].id}`], "an unnamed item blocks publishing, not saving");
-  it.categories.push({ id: "c2", name: "", items: [{ id: "z", name: "Tea", description: "", price: "", imageId: null, meta: null, status: "available", tags: [] }] });
+  it.categories.push({ id: "c2", name: "", items: [{ id: "z", name: "Tea", description: "", price: "", imageId: null, meta: null, status: "available", tags: [], ref: "", link: "" }] });
   it.categories[0].name = "Mains"; it.categories[0].items[0].name = "Rice";
   ok(!!validateContent(c, true)[`${it.id}.cat.c2`], "with several categories each needs a name to publish");
 }

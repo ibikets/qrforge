@@ -28,3 +28,5 @@ Stand-in app: `node tests/stand-ins/server.mjs` (Supabase on :54321, Paystack on
 
 - `tests/db/pages.test.mjs` (Engine): hosted-pages migration, quotas, atomic publish, isolation, rollback. Same harness as `limits.test.mjs`.
 - `tests/e2e/pages.mjs` (stand-in): hosted card end to end, including staff takedown. `tests/e2e/contact-photo.mjs`: static contact photo, QR stays photo-free, `.vcf` bytes. Both need the stand-in, a build with stand-in env and `OWNER_BOOTSTRAP_EMAIL=boot@example.com`.
+
+- `tests/import-core.ts`, `tests/import-table.ts` (local), `tests/db/import.test.mjs` (Engine), `tests/e2e/import.mjs` (stand-in): spreadsheet import. The e2e test needs `python3` with `openpyxl` to build a sample workbook; restart the app between runs (in-memory rate limits).

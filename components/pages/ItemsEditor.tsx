@@ -63,6 +63,19 @@ export default function ItemsEditor({ b, kind, pageId, ro, errors, clearErr, pat
                   <textarea aria-label={`${label} description (optional)`} rows={2} className={`${controlClass} mt-2`} placeholder="Description (optional)" maxLength={400} value={it.description} onChange={(e) => upd({ description: e.target.value })} />
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     <div>
+                      <label htmlFor={`${b.id}-ref-${it.id}`} className="mb-1 block text-sm">{menu ? "Item code (optional)" : "SKU or item code (optional)"}</label>
+                      <input id={`${b.id}-ref-${it.id}`} className={controlClass} maxLength={40} value={it.ref} aria-describedby={`${b.id}-ref-${it.id}-h`} onChange={(e) => upd({ ref: e.target.value })} />
+                      <p id={`${b.id}-ref-${it.id}-h`} className="mt-1 text-[13px] text-muted">Your own code. Visitors never see it. It lets a spreadsheet import update this {noun} instead of adding a copy.</p>
+                    </div>
+                    {menu ? null : (
+                      <div>
+                        <label htmlFor={`${b.id}-link-${it.id}`} className="mb-1 block text-sm">Link to more details (optional)</label>
+                        <input id={`${b.id}-link-${it.id}`} inputMode="url" autoCapitalize="none" className={controlClass} maxLength={300} value={it.link} onChange={(e) => upd({ link: e.target.value })} placeholder="example.com/product" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div>
                       <label htmlFor={`${b.id}-st-${it.id}`} className="mb-1 block text-sm">Availability</label>
                       <select id={`${b.id}-st-${it.id}`} className={sel} value={it.status} onChange={(e) => upd({ status: e.target.value as ItemStatus })}>
                         {statuses.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}

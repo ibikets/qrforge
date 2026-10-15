@@ -18,6 +18,8 @@ export const PLANS: Record<
     maxMediaBytes: number;
     /** dynamic (editable-destination) links; enforced in the database, see 20261019000000_dynamic_links.sql */
     maxLinks: number;
+    /** rows one spreadsheet import may process; enforced by the import routes, see 20261020000000_content_import.sql */
+    maxImportRows: number;
   }
 > = {
   free: {
@@ -33,6 +35,7 @@ export const PLANS: Record<
     maxPages: 0,
     maxMediaBytes: 0,
     maxLinks: 0,
+    maxImportRows: 0,
   },
   pro: {
     name: "Pro",
@@ -54,6 +57,7 @@ export const PLANS: Record<
     maxPages: 5,
     maxMediaBytes: 25 * 1024 * 1024,
     maxLinks: 25,
+    maxImportRows: 500,
   },
   business: {
     name: "Business",
@@ -68,6 +72,7 @@ export const PLANS: Record<
     maxPages: 25,
     maxMediaBytes: 100 * 1024 * 1024,
     maxLinks: 250,
+    maxImportRows: 2000,
   },
 };
 

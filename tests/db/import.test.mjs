@@ -1,0 +1,43 @@
+// Content-import migration (20261020000000). Real Postgres engine (embedded), NOT Supabase.
+import EmbeddedPostgres from "embedded-postgres";
+import pg from "pg";
+import fs from "node:fs";
+const REPO = process.env.QRF_ROOT ?? process.cwd();
+const dir = process.env.PGDIR || "/tmp/qrf-pg5";
+fs.rmSync(dir, { recursive: true, force: true });
+const server = new EmbeddedPostgres({ databaseDir: dir, user: "postgres", password: "pw", port: 54996, persistent: false, postgresFlags: ["-c", "max_connections=200"] });
+await server.initialise(); await server.start();
+const mk = async () => { const c = new pg.Client({ host: "localhost", port: 54996, user: "postgres", password: "pw", database: "postgres" }); await c.connect(); return c; };
+const admin = await mk();
+await admin.query(fs.readFileSync(new URL("./bootstrap.sql", import.meta.url), "utf8"));
+await admin.query(fs.readFileSync(`${REPO}/supabase/schema.sql`, "utf8"));
+for (const f of ["20261014000000_atomic_limits", "20261016000000_hosted_pages", "20261017000000_page_kinds_and_files", "20261019000000_dynamic_links"]) await admin.query(fs.readFileSync(`${REPO}/supabase/migrations/${f}.sql`, "utf8"));
+const mig = fs.readFileSync(`${REPO}/supabase/migrations/20261020000000_content_import.sql`, "utf8");
+let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? "PASS " : "FAIL ") + m); };
+const q = async (sql, p = []) => { try { return { ok: true, r: await admin.query(sql, p) }; } catch (e) { return { ok: false, code: e.code, msg: e.message }; } };
+const U = async (e) => (await admin.query("insert into auth.users(email) values($1) returning id", [e])).rows[0].id;
+await admin.query(mig); await admin.query(mig);
+ok(true, "migration applies twice without error (idempotent)");
+const lim = Object.fromEntries((await q("select plan,max_import_rows from qrforge.plan_limits")).r.rows.map((r) => [r.plan, r.max_import_rows]));
+ok(lim.free === 0 && lim.pro === 500 && lim.business === 2000, "row allowances are set per plan: " + JSON.stringify(lim));
+const a = await U("a@t"), b = await U("b@t");
+for (const u of [a, b]) await admin.query("select qrforge.apply_payment($1,$2,$3,$4,null,null,false,30)", ["r" + Math.random(), u, "pro", 350000]);
+const page = async (u) => (await admin.query("insert into qrforge.pages(user_id,kind,title,public_id,draft) values($1,'menu','M',$2,'{}') returning id", [u, Array.from({ length: 10 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 31)]).join("")])).rows[0].id;
+const pa = await page(a).catch((e) => { console.log(e.message); return null; });
+ok(!!pa, "page row created for the test");
+if (pa) {
+  const ins = (u, p, k) => q("insert into qrforge.import_jobs(user_id,page_id,idem_key,mode) values($1,$2,$3,'both') returning id", [u, p, k]);
+  ok((await ins(a, pa, "key-aaaaaaaa")).ok, "a job can be recorded");
+  const dup = await ins(a, pa, "key-aaaaaaaa"); ok(!dup.ok && dup.code === "23505", "the same key twice is refused by the database (no double apply)");
+  const results = await Promise.all(Array.from({ length: 12 }, () => ins(a, pa, "key-race-0001"))); ok(results.filter((r) => r.ok).length === 1, "12 concurrent attempts with one key: exactly one wins");
+  ok((await ins(b, pa, "key-aaaaaaaa")).ok, "another customer may use the same key text independently");
+  ok(!(await q("insert into qrforge.import_jobs(user_id,page_id,idem_key,mode) values($1,$2,'short','both')", [a, pa])).ok, "too-short key refused");
+  ok(!(await q("insert into qrforge.import_jobs(user_id,page_id,idem_key,mode) values($1,$2,'key-badmode-1','overwrite')", [a, pa])).ok, "unknown mode refused");
+  const asUser = async (uid, sql) => { const c = await mk(); try { await c.query("begin"); await c.query("set local role authenticated"); await c.query("select set_config('request.jwt.claim.sub',$1,true)", [uid]); const r = await c.query(sql); await c.query("commit"); return { ok: true, r }; } catch (e) { await c.query("rollback").catch(() => {}); return { ok: false, code: e.code }; } finally { await c.end(); } };
+  const read = await asUser(a, "select * from qrforge.import_jobs"); ok(!read.ok, "signed-in customers cannot read jobs straight from the database (service only)");
+  await admin.query("delete from qrforge.pages where id=$1", [pa]); ok((await q("select count(*)::int n from qrforge.import_jobs where page_id=$1", [pa])).r.rows[0].n === 0, "deleting a page removes its import history");
+}
+await admin.query(fs.readFileSync(`${REPO}/supabase/rollback/20261020000000_content_import.down.sql`, "utf8"));
+ok(!(await q("select 1 from qrforge.import_jobs")).ok && (await q("select 1 from qrforge.plan_limits where plan='pro'")).ok, "rollback removes only the import objects");
+await admin.query(mig); ok((await q("select count(*) from qrforge.import_jobs")).ok, "migration re-applies after rollback");
+await admin.end(); await server.stop(); process.exit(fail ? 1 : 0);

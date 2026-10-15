@@ -25,7 +25,8 @@ export type GalleryItem = { id: string; imageId: string | null; caption: string;
 export type EntryItem = { id: string; title: string; org: string; period: string; summary: string };
 export type DayHours = { closed: boolean; open: string; close: string };
 /** One priced entry: a dish on a menu or a product in a catalogue. The photo is optional; its alt text is the item name. */
-export type CatItem = { id: string; name: string; description: string; price: string; imageId: string | null; meta: ImgMeta | null; status: ItemStatus; tags: Dietary[] };
+/** `ref` is the owner's own stable code (SKU or menu code), used only to match rows when importing. `link` is an optional external page for a product (catalogue only). */
+export type CatItem = { id: string; name: string; description: string; price: string; imageId: string | null; meta: ImgMeta | null; status: ItemStatus; tags: Dietary[]; ref: string; link: string };
 export type Category = { id: string; name: string; items: CatItem[] };
 type Common = { id: string; hidden: boolean };
 export type Block =
@@ -201,7 +202,8 @@ export function validTimeZone(tz: string): boolean {
 export const DEFAULT_TZ = "Africa/Lagos";
 export const defaultDays = (): DayHours[] => Array.from({ length: 7 }, (_, i) => ({ closed: i === 6, open: "09:00", close: "17:00" }));
 
-export const emptyItem = (): CatItem => ({ id: newRowId(), name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [] });
+export const ITEM_REF = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+export const emptyItem = (): CatItem => ({ id: newRowId(), name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [], ref: "", link: "" });
 export function emptyBlock(type: BlockType): Block {
   const c = { id: newBlockId(), hidden: false };
   switch (type) {
@@ -286,7 +288,7 @@ function normaliseBlock(raw: unknown, seen: Set<string>): Block | null {
           const i = obj(y); if (!i || total >= MAX_ITEMS) return [];
           total++;
           return [{ id: uniqueId(i.id, iids, newRowId), name: str(i.name, 80), description: str(i.description, 400), price: str(i.price, 14), imageId: media(i.imageId), meta: imgMeta(i.meta),
-            status: isStatus(i.status) ? i.status : "available", tags: [...new Set(arr(i.tags).filter(isDietary))] }];
+            status: isStatus(i.status) ? i.status : "available", tags: [...new Set(arr(i.tags).filter(isDietary))], ref: str(i.ref, 40), link: str(i.link, 300) }];
         });
         return [{ id: uniqueId(cat.id, cids, newRowId), name: str(cat.name, 60), items }];
       });
@@ -301,7 +303,7 @@ function normaliseBlock(raw: unknown, seen: Set<string>): Block | null {
 /** Menus have no pre-order status and carry dietary labels; catalogues carry neither dietary labels. */
 function fixItems(kind: BlockKind, b: Extract<Block, { type: "items" }>): Block {
   return { ...b, categories: b.categories.map((c) => ({ ...c, items: c.items.map((i) => ({
-    ...i, tags: kind === "menu" ? i.tags : [], status: kind === "menu" && !MENU_STATUSES.includes(i.status) ? "available" : i.status })) })) };
+    ...i, tags: kind === "menu" ? i.tags : [], link: kind === "product" ? i.link : "", status: kind === "menu" && !MENU_STATUSES.includes(i.status) ? "available" : i.status })) })) };
 }
 
 /** Coerce untrusted JSON into content for this kind: one header first, only allowed sections, counts capped. */
@@ -421,6 +423,7 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
       case "items": {
         text("heading", b.heading);
         const noun = c.kind === "menu" ? "dish" : "product";
+        const refs = new Set<string>();
         for (const cat of b.categories) {
           const ck = `${b.id}.cat.${cat.id}`;
           if (CONTROL.test(cat.name)) e[ck] = "Remove unsupported characters.";
@@ -429,7 +432,11 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
             const k = `${b.id}.items.${it.id}`;
             if ([it.name, it.description, it.price].some((v) => CONTROL.test(v))) e[k] = "Remove unsupported characters.";
             else if (it.price && parsePrice(it.price) === null) e[k] = "Enter the price as a number, for example 2500 or 2500.50. Leave it empty to show no price.";
+            else if (it.ref && !ITEM_REF.test(it.ref)) e[k] = "The item code can use letters, numbers, dots, dashes and underscores (up to 40, starting with a letter or number).";
+            else if (it.ref && refs.has(it.ref.toLowerCase())) e[k] = "Another item already uses this item code. Codes must be different.";
+            else if (it.link && !websiteUrl(it.link)) e[k] = "Enter the link as a website address such as example.com/product (no spaces), or leave it empty.";
             else if (forPublish && !it.name && (it.description || it.price || it.imageId)) e[k] = `Give this ${noun} a name, or remove it.`;
+            if (it.ref) refs.add(it.ref.toLowerCase());
           }
         }
         break;
@@ -507,7 +514,7 @@ export type PubBlock =
   | { id: string; type: "items"; heading: string; currency: Currency; categories: PubCategory[]; enquiry: Enquiry | null }
   | { id: string; type: "event"; startsAt: string; endsAt: string; timezone: string; online: boolean }
   | { id: string; type: "offer"; title: string; code: string; description: string; validFrom: string; validUntil: string; timezone: string; conditions: string };
-export type PubItem = { id: string; name: string; description: string; price: number | null; imageId: string | null; w: number; h: number; status: ItemStatus; tags: Dietary[] };
+export type PubItem = { id: string; name: string; description: string; price: number | null; imageId: string | null; w: number; h: number; status: ItemStatus; tags: Dietary[]; href: string | null; ref: string };
 export type PubCategory = { id: string; name: string; items: PubItem[] };
 /** How a visitor can ask about a product: the page's first public WhatsApp number, else its first public email address. */
 export type Enquiry = { whatsapp: string | null; email: string | null };
@@ -594,7 +601,7 @@ function publicBlocks(c: PageContent): PubBlock[] {
             const price = i.price ? parsePrice(i.price) : null;
             if (i.price && price === null) return [];
             const img = i.imageId && i.meta ? i : null;
-            return [{ id: i.id, name: i.name, description: i.description, price, imageId: img ? img.imageId : null, w: img?.meta?.w ?? 0, h: img?.meta?.h ?? 0, status: i.status, tags: i.tags }];
+            return [{ id: i.id, name: i.name, description: i.description, price, imageId: img ? img.imageId : null, w: img?.meta?.w ?? 0, h: img?.meta?.h ?? 0, status: i.status, tags: i.tags, href: c.kind === "product" && i.link ? websiteUrl(i.link) : null, ref: ITEM_REF.test(i.ref) ? i.ref : "" }];
           });
           return items.length ? [{ id: cat.id, name: cat.name, items }] : [];
         });
@@ -644,7 +651,7 @@ export function readPageSnapshot(raw: unknown): PageSnapshot | null {
       case "items": return [{ ...b, heading: str0(b.heading), currency: isCurrency(b.currency) ? b.currency : "NGN", enquiry: b.enquiry && typeof b.enquiry === "object" ? { whatsapp: typeof b.enquiry.whatsapp === "string" ? b.enquiry.whatsapp : null, email: typeof b.enquiry.email === "string" ? b.enquiry.email : null } : null,
         categories: arr(b.categories).flatMap((cat): PubCategory[] => { const x = obj(cat); if (!x || typeof x.id !== "string") return [];
           const items = arr(x.items).flatMap((i): PubItem[] => { const y = obj(i); return y && typeof y.id === "string" && typeof y.name === "string"
-            ? [{ id: y.id, name: y.name, description: str0(y.description), price: typeof y.price === "number" ? y.price : null, imageId: typeof y.imageId === "string" ? y.imageId : null, w: typeof y.w === "number" ? y.w : 0, h: typeof y.h === "number" ? y.h : 0, status: isStatus(y.status) ? y.status : "available", tags: arr(y.tags).filter(isDietary) }] : []; });
+            ? [{ id: y.id, name: y.name, description: str0(y.description), price: typeof y.price === "number" ? y.price : null, imageId: typeof y.imageId === "string" ? y.imageId : null, w: typeof y.w === "number" ? y.w : 0, h: typeof y.h === "number" ? y.h : 0, status: isStatus(y.status) ? y.status : "available", tags: arr(y.tags).filter(isDietary), href: typeof y.href === "string" && websiteUrl(y.href) ? y.href : null, ref: typeof y.ref === "string" && ITEM_REF.test(y.ref) ? y.ref : "" }] : []; });
           return [{ id: x.id, name: str0(x.name), items }]; }) }];
       case "event": return typeof b.startsAt === "string" && typeof b.timezone === "string" ? [{ ...b, endsAt: str0(b.endsAt), online: b.online === true }] : [];
       case "offer": return typeof b.title === "string" ? [{ ...b, code: str0(b.code), description: str0(b.description), validFrom: str0(b.validFrom), validUntil: str0(b.validUntil), timezone: str0(b.timezone) || DEFAULT_TZ, conditions: str0(b.conditions) }] : [];

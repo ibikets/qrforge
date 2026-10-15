@@ -31,12 +31,17 @@ async function Editor({ params }: { params: Promise<{ id: string }> }) {
   const qrSvg = await QRCode.toString(publicUrl, { type: "svg", errorCorrectionLevel: "M", margin: 2 });
   if (isBlockKind(page.kind))
     return (
+      <>
+      {(page.kind === "menu" || page.kind === "product") && PLANS[plan].maxImportRows > 0 && page.lifecycle !== "archived" ? (
+        <p className="mb-4"><LinkButton href={`/workspace/pages/${page.id}/import`} variant="secondary">Import items from a spreadsheet</LinkButton></p>
+      ) : null}
       <BlocksEditor
         key={page.id} id={page.id} initialTitle={page.title} initialContent={normaliseContent(page.kind, page.draft)} version={page.draft_version}
         lifecycle={page.lifecycle} publishedVersion={page.published_version} publicUrl={publicUrl}
         revisions={(revs ?? []) as { version: number; published_at: string }[]} canEdit={PLANS[plan].maxPages > 0}
         takenDown={!!page.taken_down_at} qrSvg={qrSvg}
       />
+      </>
     );
   return (
     <CardEditor
