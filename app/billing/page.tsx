@@ -21,49 +21,21 @@ async function Details() {
   const { userId } = await getSession();
   if (!userId) redirect("/login?next=%2Fbilling");
   const sb = await supabaseServer();
-  // renewal_kobo and discount_kobo exist once the offers update is applied; before that the plan price applies.
-  const subQ = (cols: string) =>
-    sb.from("subscriptions").select(cols).maybeSingle();
-  const payQ = (cols: string) =>
-    sb
-      .from("payments")
-      .select(cols)
-      .order("created_at", { ascending: false })
-      .limit(10);
-  let [subRes, payRes] = (await Promise.all([
-    subQ("plan, current_period_end, auto_renew, renewal_kobo"),
-    payQ("reference, plan, amount_kobo, discount_kobo, created_at"),
-  ])) as unknown as [
-    {
-      data: {
-        plan: string;
-        current_period_end: string;
-        auto_renew: boolean;
-        renewal_kobo?: number | null;
-      } | null;
-      error: { code?: string } | null;
-    },
-    {
-      data:
-        | {
-            reference: string;
-            plan: string;
-            amount_kobo: number;
-            discount_kobo?: number;
-            created_at: string;
-          }[]
-        | null;
-      error: { code?: string } | null;
-    },
-  ];
-  if (subRes.error?.code === "42703")
-    subRes = (await subQ(
-      "plan, current_period_end, auto_renew",
-    )) as unknown as typeof subRes;
-  if (payRes.error?.code === "42703")
-    payRes = (await payQ(
-      "reference, plan, amount_kobo, created_at",
-    )) as unknown as typeof payRes;
+  // The signed-in session may read only the columns it has been granted (plan, period end, auto-renew; reference, plan,
+  // amount, date). renewal_kobo and discount_kobo are not granted to it, so asking for them fails with 42501 and used to
+  // take the whole page down. They are read separately, server-side, strictly for this user's own rows; the grants stay as they are.
+  const subRes = (await sb.from("subscriptions").select("plan, current_period_end, auto_renew").maybeSingle()) as unknown as {
+    data: { plan: string; current_period_end: string; auto_renew: boolean } | null;
+    error: { code?: string } | null;
+  };
+  const payRes = (await sb
+    .from("payments")
+    .select("reference, plan, amount_kobo, created_at")
+    .order("created_at", { ascending: false })
+    .limit(10)) as unknown as {
+    data: { reference: string; plan: string; amount_kobo: number; discount_kobo?: number; created_at: string }[] | null;
+    error: { code?: string } | null;
+  };
   if (subRes.error) {
     return (
       <div role="alert" className="rounded-panel bg-surface p-8">
@@ -90,8 +62,21 @@ async function Details() {
     hasCard = Boolean(data?.authorization_code);
   }
   const plan = sub?.plan as PlanId | undefined;
-  const renewKobo = (sub?.renewal_kobo ??
-    (plan ? PLANS[plan].priceNgn * 100 : 0)) as number;
+  // Agreed renewal price. If it cannot be read the price is left out rather than guessed.
+  let renewKobo: number | null = plan ? PLANS[plan].priceNgn * 100 : 0;
+  if (sub && active) {
+    const r = await supabaseAdmin().from("subscriptions").select("renewal_kobo").eq("user_id", userId).maybeSingle();
+    if (r.error) renewKobo = null;
+    else if (r.data?.renewal_kobo) renewKobo = r.data.renewal_kobo as number;
+  }
+  // Offer savings per payment, for this user's listed payments only. Unknown savings are simply not shown.
+  if (payRes.data?.length) {
+    const d = await supabaseAdmin().from("payments").select("reference, discount_kobo").eq("user_id", userId).in("reference", payRes.data.map((p) => p.reference));
+    if (!d.error) {
+      const by = new Map((d.data ?? []).map((x: { reference: string; discount_kobo: number | null }) => [x.reference, x.discount_kobo ?? 0]));
+      payRes.data = payRes.data.map((p) => ({ ...p, discount_kobo: by.get(p.reference) ?? 0 }));
+    }
+  }
 
   return (
     <>
@@ -107,7 +92,7 @@ async function Details() {
           <>
             <p className="mt-3">
               {sub.auto_renew && hasCard
-                ? `Renews automatically on ${fmt(sub.current_period_end)} at ${formatNaira(renewKobo / 100)}.`
+                ? `Renews automatically on ${fmt(sub.current_period_end)}${renewKobo != null ? ` at ${formatNaira(renewKobo / 100)}` : ""}.`
                 : `Active until ${fmt(sub.current_period_end)}. ${sub.auto_renew ? "It will not renew automatically yet (see below)." : "Auto-renewal is off."}`}
             </p>
             {sub.auto_renew && !hasCard ? (

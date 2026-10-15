@@ -140,6 +140,15 @@ http.createServer(async (req, res) => {
   };
   const failKey = { qr_codes: { GET: "qr_codes_read", HEAD: "qr_codes_read", DELETE: "qr_codes_delete", POST: "qr_codes_write", PATCH: "qr_codes_write" }, subscriptions: { GET: "subs_read" }, payments: { GET: "pay_read" } }[table]?.[req.method];
   if (failKey && state.fail[failKey]) return json(res, 500, { code: "XX000", message: "mock failure" });
+  // Column-grant stand-in: production grants signed-in users SELECT on these columns only (service role: everything).
+  // A browser-session query naming any other column fails with 42501, exactly as Postgres does; it is NOT "undefined column" (42703).
+  const GRANTED = { subscriptions: ["user_id", "plan", "current_period_end", "auto_renew", "updated_at"], payments: ["reference", "plan", "amount_kobo", "created_at", "status"] }[table];
+  const asService = (req.headers.authorization ?? "") === "Bearer svc-mock";
+  if (GRANTED && !asService && (req.method === "GET" || req.method === "HEAD")) {
+    const cols = (u.searchParams.get("select") ?? "*").split(",").map((c) => c.trim().split(":")[0].replace(/\(.*/, "")).filter(Boolean);
+    const bad = cols.find((c) => c === "*" || !GRANTED.includes(c));
+    if (bad) return json(res, 403, { code: "42501", message: `permission denied for table ${table}` });
+  }
   // RLS stand-in: everything belongs to the single test user
   if (req.method === "GET" || req.method === "HEAD") return send(filterRows(T(), u.searchParams));
   if (req.method === "POST") {
