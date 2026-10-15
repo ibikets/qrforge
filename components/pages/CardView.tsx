@@ -11,6 +11,7 @@ const LABEL: Record<string, string> = { mobile: "Mobile", work: "Work", home: "H
 export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s: Snapshot; mediaBase: string; vcfHref: string | null; preview?: boolean }) {
   const accent = ACCENTS.find((a) => a.id === s.accent) ?? ACCENTS[0];
   const phone = s.phones[0], wa = s.phones.find((p) => p.whatsapp), mail = s.emails[0], site = s.websites[0];
+  const safeWeb = typeof site?.href === "string" && /^https?:\/\//i.test(site.href) ? site.href : null;
   return (
     <article aria-label={`Digital business card for ${s.name}`} className="mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_0_rgba(0,0,0,.06)]">
       <header style={{ background: accent.bg, color: accent.fg }} className="px-6 pb-6 pt-8 text-center">
@@ -33,7 +34,7 @@ export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s
           {phone ? <a className={act} href={phone.href}>Call</a> : null}
           {wa?.whatsapp ? <a className={act} href={wa.whatsapp} rel="noopener noreferrer" target="_blank">WhatsApp</a> : null}
           {mail ? <a className={act} href={mail.href}>Email</a> : null}
-          {site ? <a className={act} href={site.href} rel="noopener noreferrer" target="_blank">Website</a> : null}
+          {safeWeb ? <a className={act} href={safeWeb} rel="noopener noreferrer" target="_blank">Website</a> : null}
           <ShareButton title={`${s.name} on Qrenuvi`} className={act} />
           {vcfHref ? (
             <a className={`${act} !border-transparent !bg-brand !text-white hover:!bg-brand-hover`} href={vcfHref} download={`${s.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "contact"}.vcf`}>Save contact</a>
@@ -51,9 +52,9 @@ export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s
             <section key={title} aria-label={title} className="mb-4">
               <h2 className="mb-1 text-sm font-medium text-muted">{title}</h2>
               <ul className="m-0 list-none divide-y divide-divider p-0">
-                {rows.map((r) => (
+                {rows.filter((r) => typeof r.href === "string" && typeof r.text === "string").map((r) => (
                   <li key={r.id}>
-                    <a href={r.href} {...(r.href.startsWith("http") ? { rel: "noopener noreferrer", target: "_blank" } : {})} className="flex min-h-12 flex-wrap items-center gap-x-2 break-all py-2 text-brand">
+                    <a href={r.href} {...(/^https?:\/\//i.test(r.href) ? { rel: "noopener noreferrer", target: "_blank" } : {})} className="flex min-h-12 flex-wrap items-center gap-x-2 break-all py-2 text-brand">
                       {r.label ? <span className="text-sm capitalize text-muted">{r.label}</span> : null}
                       <span>{r.text}</span>
                     </a>

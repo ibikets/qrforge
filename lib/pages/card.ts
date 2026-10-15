@@ -79,20 +79,47 @@ export type CardErrors = Record<string, string>;
 
 const EMAIL = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 export const phoneDigits = (v: string) => v.replace(/\D/g, "");
-/** Normalised website address (https assumed when no scheme) or null. Only http(s) is ever allowed. */
-export function websiteUrl(v: string): string | null {
+/**
+ * Website address policy (shared by the editor, the preview, the server and the contact file):
+ *  - the address is trimmed; it must be 1-300 characters with no spaces or control characters inside;
+ *  - "example.com", "example.com/path" and "example.com:8080" get https:// added; "http://" and "https://" are kept;
+ *  - any other scheme (javascript:, data:, mailto:, tel:, ftp:, file: ...) is refused, as are addresses with a user name or password;
+ *  - the host must look like a real domain (letters, digits, hyphens, at least one dot and a 2+ letter ending).
+ * Query strings and fragments are kept. Incomplete input ("h", "https:", "https://", "example") simply returns null; this never throws.
+ */
+export function websiteUrl(v: unknown): string | null {
+  if (typeof v !== "string") return null;
   const t = v.trim();
-  if (!t) return null;
-  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : `https://${t}`;
+  if (!t || t.length > 300 || /[\s\u0000-\u001f\u007f]/.test(t)) return null;
+  const hostPort = /^[^\s/:?#@]+:\d{1,5}(?:[/?#]|$)/.test(t); // "example.com:8080/x" is a host and port, not a scheme
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) && !hostPort;
   try {
-    const u = new URL(withScheme);
+    const u = new URL(hasScheme ? t : `https://${t}`);
     if (u.protocol !== "https:" && u.protocol !== "http:") return null;
     if (u.username || u.password) return null;
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(u.hostname)) return null;
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(u.hostname) || !u.hostname.split(".").every((l) => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(l))) return null;
     return u.toString();
   } catch {
     return null;
   }
+}
+
+export const WEBSITE_HELP = "Enter a website address such as example.com or https://example.com/page (no spaces).";
+
+/** The problem with one row, or null. Blank rows have no problem (they are dropped on publish). */
+export function rowProblem(g: RowGroup, row: CardRow): string | null {
+  const v = row.value;
+  if (!v) return null;
+  if (CONTROL.test(v) || CONTROL.test(row.label)) return "Remove unsupported characters.";
+  if (g === "phones") {
+    const d = phoneDigits(v);
+    if (!/^[+\d\s().-]+$/.test(v) || d.length < 7 || d.length > 15) return "Enter a phone number with 7 to 15 digits.";
+    if (row.whatsapp && !v.trim().startsWith("+")) return "WhatsApp needs the international form, starting with + and the country code.";
+    return null;
+  }
+  if (g === "emails") return EMAIL.test(v) ? null : "Enter a valid email address.";
+  if (g === "websites") return websiteUrl(v) ? null : WEBSITE_HELP;
+  return socialError(row.label || "other", v);
 }
 
 /** Field-level problems. `forPublish` additionally requires what a recipient needs to see. Keys look like `phones.0.value`. */
@@ -107,19 +134,8 @@ export function validateCard(c: Card, forPublish: boolean): CardErrors {
       const k = `${g}.${i}.value`;
       const v = row.value;
       if (!v) return; // blank rows are dropped on publish; nothing to validate
-      if (CONTROL.test(v) || CONTROL.test(row.label)) return void (e[k] = "Remove unsupported characters.");
-      if (g === "phones") {
-        const d = phoneDigits(v);
-        if (!/^[+\d\s().-]+$/.test(v) || d.length < 7 || d.length > 15) e[k] = "Enter a phone number with 7 to 15 digits.";
-        else if (row.whatsapp && !v.trim().startsWith("+")) e[k] = "WhatsApp needs the international form, starting with + and the country code.";
-      } else if (g === "emails") {
-        if (!EMAIL.test(v)) e[k] = "Enter a valid email address.";
-      } else if (g === "websites") {
-        if (!websiteUrl(v)) e[k] = "Enter a valid website address (https:// or a domain such as example.com).";
-      } else {
-        const m = socialError(row.label || "other", v);
-        if (m) e[k] = m;
-      }
+      const prob = rowProblem(g, row);
+      if (prob) e[k] = prob;
       if (!e[k]) {
         const dk = dedupeKey(cg, g === "websites" ? (websiteUrl(v) ?? v) : v, row.label);
         if (seen.has(dk)) e[k] = `This repeats ${GROUPS[cg].singular} ${seen.get(dk)! + 1}.`;
@@ -145,14 +161,16 @@ export type Snapshot = {
 const telHref = (v: string) => `tel:${v.trim().startsWith("+") ? "+" : ""}${phoneDigits(v)}`;
 /** Only public, non-blank, valid rows survive; private rows and flags are not copied. */
 export function snapshotOf(c: Card): Snapshot {
-  const pub = (g: RowGroup) => c[g].filter((r) => r.public && r.value);
+  // Only public, non-blank rows that pass the same checks as publishing. Anything half-typed is simply left out of the preview.
+  const pub = (g: RowGroup) => c[g].filter((r) => r.public && r.value && !rowProblem(g, r));
+  const clean = (x: string) => x.replace(/^https?:\/\//i, "").replace(/\/$/, "");
   return {
     v: 1, name: c.name, role: c.role, company: c.company, intro: c.intro, accent: c.accent,
     portraitId: c.portraitId, logoId: c.logoId,
     phones: pub("phones").map((r) => ({ id: r.id, label: r.label, text: r.value, href: telHref(r.value), whatsapp: r.whatsapp ? `https://wa.me/${phoneDigits(r.value)}` : null })),
     emails: pub("emails").map((r) => ({ id: r.id, label: r.label, text: r.value, href: `mailto:${r.value}` })),
-    websites: pub("websites").map((r) => ({ id: r.id, label: r.label, text: r.value.replace(/^https?:\/\//i, "").replace(/\/$/, ""), href: websiteUrl(r.value)! })),
-    socials: pub("socials").flatMap((r) => { const u = socialUrl(r.label || "other", r.value); return u ? [{ id: r.id, label: r.label || "other", text: r.value.replace(/^https:\/\//i, "").replace(/\/$/, ""), href: u }] : []; }),
+    websites: pub("websites").flatMap((r) => { const u = websiteUrl(r.value); return u ? [{ id: r.id, label: r.label, text: clean(r.value.trim()), href: u }] : []; }),
+    socials: pub("socials").flatMap((r) => { const u = socialUrl(r.label || "other", r.value); return u ? [{ id: r.id, label: r.label || "other", text: clean(r.value), href: u }] : []; }),
   };
 }
 
@@ -161,8 +179,9 @@ export function readSnapshot(raw: unknown): Snapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const s = raw as Snapshot;
   if (s.v !== 1 || typeof s.name !== "string") return null;
-  const arr = <T,>(x: T[] | undefined) => (Array.isArray(x) ? x : []);
-  return { ...s, phones: arr(s.phones), emails: arr(s.emails), websites: arr(s.websites), socials: arr(s.socials) };
+  const rows = <T extends { id?: unknown; text?: unknown; href?: unknown }>(x: T[] | undefined) =>
+    (Array.isArray(x) ? x : []).filter((r) => r && typeof r.id === "string" && typeof r.text === "string" && typeof r.href === "string");
+  return { ...s, phones: rows(s.phones), emails: rows(s.emails), websites: rows(s.websites), socials: rows(s.socials) };
 }
 
 export const initials = (name: string) =>

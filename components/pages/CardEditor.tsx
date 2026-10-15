@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
 import { TextArea, TextField, controlClass } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
-import { ACCENTS, MAX_ROWS, ROW_GROUPS, newRowId, snapshotOf, validateCard, type Card, type CardErrors, type RowGroup } from "@/lib/pages/card";
+import PreviewBoundary from "@/components/pages/PreviewBoundary";
+import { ACCENTS, MAX_ROWS, ROW_GROUPS, newRowId, rowProblem, snapshotOf, validateCard, type Card, type CardErrors, type RowGroup } from "@/lib/pages/card";
 import { GROUPS } from "@/lib/qr-contact";
 
 type Rev = { version: number; published_at: string };
@@ -36,6 +37,7 @@ export default function CardEditor(p: Props) {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<"" | "save" | "publish" | "unpublish" | "delete" | "restore">("");
   const [errors, setErrors] = useState<CardErrors>({});
+  const [touched, setTouched] = useState<Set<string>>(new Set()); // row values the person has left, so we only judge finished input
   const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [conflict, setConflict] = useState<{ version: number; title: string; card: Card } | null>(null);
   const [dlg, setDlg] = useState<"" | "publish" | "unpublish" | "delete">("");
@@ -47,7 +49,12 @@ export default function CardEditor(p: Props) {
     setMsg(null);
   }
   const set = <K extends keyof Card>(k: K, v: Card[K]) => edit({ ...card, [k]: v });
-  const setRow = (g: RowGroup, i: number, patch: Partial<Card[RowGroup][number]>) => edit({ ...card, [g]: card[g].map((r, n) => (n === i ? { ...r, ...patch } : r)) });
+  const setRow = (g: RowGroup, i: number, patch: Partial<Card[RowGroup][number]>) => {
+    const k = `${g}.${i}.value`;
+    if (errors[k]) setErrors((x) => { const n = { ...x }; delete n[k]; return n; }); // a saved-error message is about the old text; judge the new text instead
+    edit({ ...card, [g]: card[g].map((r, n) => (n === i ? { ...r, ...patch } : r)) });
+  };
+  const leave = (g: RowGroup, i: number) => setTouched((t) => new Set(t).add(`${g}.${card[g][i]?.id}`));
   const addRow = (g: RowGroup) => {
     if (card[g].length >= MAX_ROWS) return;
     edit({ ...card, [g]: [...card[g], { id: newRowId(), label: META[g].labels[0]?.id ?? (g === "socials" ? "instagram" : ""), value: "", public: true, ...(g === "phones" ? { whatsapp: false } : {}) }] });
@@ -163,7 +170,7 @@ export default function CardEditor(p: Props) {
               <fieldset key={g} className="mb-6 min-w-0 border-0 p-0">
                 <legend className="mb-2 text-sm font-medium">{m.title}</legend>
                 {card[g].map((r, i) => {
-                  const e = err(`${g}.${i}.value`);
+                  const e = err(`${g}.${i}.value`) ?? (touched.has(`${g}.${r.id}`) ? rowProblem(g, r) : null);
                   const label = `${m.singular[0].toUpperCase()}${m.singular.slice(1)} ${i + 1}`;
                   return (
                     <div key={r.id} className="mb-4 rounded-control border border-divider p-3">
@@ -175,7 +182,7 @@ export default function CardEditor(p: Props) {
                         ) : (
                           <input aria-label={`${label} label (optional)`} className={controlClass} placeholder="Label, e.g. Portfolio" maxLength={30} value={r.label} onChange={(ev) => setRow(g, i, { label: ev.target.value })} />
                         )}
-                        <input id={`${g}-${i}`} aria-label={label} aria-invalid={e ? true : undefined} aria-describedby={e ? `${g}-${i}-err` : undefined} inputMode={m.inputMode} placeholder={m.placeholder} maxLength={300} className={controlClass} value={r.value} onChange={(ev) => setRow(g, i, { value: ev.target.value })} />
+                        <input id={`${g}-${i}`} aria-label={label} aria-invalid={e ? true : undefined} aria-describedby={e ? `${g}-${i}-err` : undefined} inputMode={m.inputMode} placeholder={m.placeholder} maxLength={300} className={controlClass} value={r.value} onBlur={() => leave(g, i)} onChange={(ev) => setRow(g, i, { value: ev.target.value })} />
                       </div>
                       {e ? <p id={`${g}-${i}-err`} className="mt-2 text-[13px] text-danger">{e}</p> : null}
                       <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1">
@@ -245,7 +252,7 @@ export default function CardEditor(p: Props) {
 
       <aside aria-label="Live preview" className="min-w-0 min-[1100px]:sticky min-[1100px]:top-6 min-[1100px]:self-start">
         <h2 className="mb-2 text-sm font-medium text-muted">Preview of your draft (shows what recipients will see)</h2>
-        <CardView s={preview} mediaBase={`/api/pages/${p.id}/media`} vcfHref={null} preview />
+        <PreviewBoundary resetKey={preview}><CardView s={preview} mediaBase={`/api/pages/${p.id}/media`} vcfHref={null} preview /></PreviewBoundary>
       </aside>
 
       <Dialog open={dlg === "publish"} onClose={() => setDlg("")} title={live ? "Publish these changes?" : "Publish this card?"}>
