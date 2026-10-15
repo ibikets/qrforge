@@ -126,8 +126,8 @@ export function interpretRows(rows: Table, headerRow: number, map: Mapping, kind
 export type Options = { mode: "add" | "update" | "both"; fields: Field[]; duplicates: "skip" | "add" };
 export const UPDATABLE: Field[] = ["name", "description", "price", "status", "tags", "category", "link", "ref"];
 export type Action = "new" | "update" | "unchanged" | "skipped" | "invalid";
-export type PlanRow = RowResult & { action: Action; reason: string; changes: string[]; itemId: string | null };
-export type Plan = { rows: PlanRow[]; counts: { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number }; next: Category[]; imagesPending: number };
+export type PlanRow = RowResult & { action: Action; reason: string; changes: string[]; itemId: string | null; noRoom?: boolean };
+export type Plan = { rows: PlanRow[]; counts: { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; noRoom: number }; next: Category[]; imagesPending: number; itemsBefore: number; itemsAfter: number; roomBefore: number };
 export type Existing = { currency: Currency; categories: Category[] };
 
 const key = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
@@ -152,7 +152,7 @@ export function planImport(existing: Existing, results: RowResult[], kind: Impor
     const p: PlanRow = { ...r, action: "invalid", reason: "", changes: [], itemId: null };
     rows.push(p);
     if (r.errors.length) { p.reason = r.errors[0]; continue; }
-    if (++processed > rowLimit) { p.reason = `Over the limit of ${rowLimit} rows per import on your plan.`; p.errors = [p.reason]; continue; }
+    if (++processed > rowLimit) { p.reason = `Over the limit of ${rowLimit} rows per import on your plan.`; p.errors = [p.reason]; p.noRoom = true; continue; }
     if (r.example) { p.action = "skipped"; p.reason = "Template example row."; continue; }
     let match: CatItem | undefined;
     if (r.parsed.id) { match = byId.get(r.parsed.id); if (!match) { p.errors = [`No item with the ID “${r.parsed.id}” exists on this page.`]; p.reason = p.errors[0]; continue; } }
@@ -171,8 +171,8 @@ export function planImport(existing: Existing, results: RowResult[], kind: Impor
       set("ref", "item code", () => { cur.ref = r.parsed.ref!; }, cur.ref !== r.parsed.ref);
       if (allow.has("category") && r.present.includes("category") && key(where.get(cur.id)?.name ?? "") !== key(r.parsed.category!)) {
         const from = where.get(cur.id)!; const to = catFor(r.parsed.category!);
-        if (!to) { p.errors = [`Over the limit of ${MAX_CATEGORIES} categories.`]; p.reason = p.errors[0]; continue; }
-        if (to.items.length >= MAX_ITEMS_PER_CATEGORY) { p.errors = [`The category “${to.name}” is full (${MAX_ITEMS_PER_CATEGORY} items).`]; p.reason = p.errors[0]; continue; }
+        if (!to) { p.errors = [`Over the limit of ${MAX_CATEGORIES} categories.`]; p.reason = p.errors[0]; p.noRoom = true; continue; }
+        if (to.items.length >= MAX_ITEMS_PER_CATEGORY) { p.errors = [`The category “${to.name}” is full (${MAX_ITEMS_PER_CATEGORY} items).`]; p.reason = p.errors[0]; p.noRoom = true; continue; }
         from.items = from.items.filter((x) => x.id !== cur.id); to.items.push(cur); where.set(cur.id, to); changes.push("category");
       }
       p.changes = changes; p.action = changes.length ? "update" : "unchanged"; p.reason = changes.length ? `Will change: ${changes.join(", ")}.` : "Already up to date.";
@@ -183,16 +183,16 @@ export function planImport(existing: Existing, results: RowResult[], kind: Impor
     const dupKey = key(r.parsed.category ?? "") + "|" + key(r.parsed.name);
     const isDup = !r.parsed.ref && (cats.some((c) => key(c.name || (kind === "menu" ? "Menu" : "Products")) === key(r.parsed.category || (kind === "menu" ? "Menu" : "Products")) && c.items.some((i) => key(i.name) === key(r.parsed.name!))) || seenNew.has(dupKey));
     if (isDup && opt.duplicates === "skip") { p.action = "skipped"; p.reason = "Possible duplicate: same name in the same category and no code to tell them apart. Add a code, or choose to add duplicates."; continue; }
-    if (total() >= MAX_ITEMS) { p.errors = [`The page already holds the most items it can (${MAX_ITEMS}).`]; p.reason = p.errors[0]; continue; }
-    const c = catFor(r.parsed.category ?? ""); if (!c) { p.errors = [`Over the limit of ${MAX_CATEGORIES} categories.`]; p.reason = p.errors[0]; continue; }
-    if (c.items.length >= MAX_ITEMS_PER_CATEGORY) { p.errors = [`The category “${c.name}” is full (${MAX_ITEMS_PER_CATEGORY} items).`]; p.reason = p.errors[0]; continue; }
+    if (total() >= MAX_ITEMS) { p.errors = [`No room: a page holds at most ${MAX_ITEMS} items and this one is full.`]; p.reason = p.errors[0]; p.noRoom = true; continue; }
+    const c = catFor(r.parsed.category ?? ""); if (!c) { p.errors = [`No room: a page holds at most ${MAX_CATEGORIES} categories.`]; p.reason = p.errors[0]; p.noRoom = true; continue; }
+    if (c.items.length >= MAX_ITEMS_PER_CATEGORY) { p.errors = [`No room: the category “${c.name}” is full (${MAX_ITEMS_PER_CATEGORY} items).`]; p.reason = p.errors[0]; p.noRoom = true; continue; }
     const it: CatItem = { id: newRowId(), name: r.parsed.name, description: r.parsed.description ?? "", price: r.parsed.price ?? "", imageId: null, meta: null, status: r.parsed.status ?? "available", tags: kind === "menu" ? r.parsed.tags ?? [] : [], ref: r.parsed.ref ?? "", link: kind === "product" ? r.parsed.link ?? "" : "" };
     c.items.push(it); index(); seenNew.add(dupKey);
     p.action = "new"; p.itemId = it.id; p.reason = r.parsed.category ? "Will be added." : `Will be added to “${c.name}” (no category given).`;
   }
   const n = (a: Action) => rows.filter((x) => x.action === a).length;
   const imagesPending = rows.filter((x) => (x.action === "new" || x.action === "update") && x.parsed.imageUrl).length;
-  return { rows, counts: { rows: rows.length, valid: n("new") + n("update") + n("unchanged"), invalid: n("invalid"), skipped: n("skipped"), added: n("new"), updated: n("update"), unchanged: n("unchanged"), warnings: rows.filter((x) => x.warnings.length).length }, next: cats.filter((c, i) => c.items.length || cats.length === 1 || i === 0), imagesPending };
+  return { rows, counts: { rows: rows.length, valid: n("new") + n("update") + n("unchanged"), invalid: n("invalid"), skipped: n("skipped"), added: n("new"), updated: n("update"), unchanged: n("unchanged"), warnings: rows.filter((x) => x.warnings.length).length, noRoom: rows.filter((x) => x.noRoom).length }, next: cats.filter((c, i) => c.items.length || cats.length === 1 || i === 0), imagesPending, itemsBefore: existing.categories.reduce((n, c) => n + c.items.filter((i) => !blank(i)).length, 0), itemsAfter: total(), roomBefore: Math.max(0, MAX_ITEMS - existing.categories.reduce((n, c) => n + c.items.filter((i) => !blank(i)).length, 0)) };
 }
 
 // ---------- templates, exports, error report ----------

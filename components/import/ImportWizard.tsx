@@ -10,7 +10,7 @@ import type { Category } from "@/lib/pages/blocks";
 import type { Currency } from "@/lib/pages/items";
 
 type Sheet = { name: string; rows: string[][] };
-type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; imagesNotFetched: number };
+type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; noRoom?: number; imagesNotFetched: number };
 type Job = { id: string; source_name: string; counts: Counts; created_at: string; status: string; after_version: number | null };
 const STEPS = ["Choose file", "Match columns", "Review", "Done"] as const;
 const ACTION_LABEL: Record<Action, string> = { new: "New", update: "Update", unchanged: "No change", skipped: "Skipped", invalid: "Not imported" };
@@ -107,7 +107,8 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
             <input id="imp-file" type="file" accept=".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy !== ""} className={`${controlClass} bg-surface`} onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); }} />
             <p role="status" className="mt-2 text-sm text-muted">{busy === "reading" ? "Reading your file…" : "Formulas, macros and links to other workbooks are never run or followed; only the values in the file are read."}</p>
           </div>
-          <p className="mt-4 text-sm text-muted">This release imports from CSV and Excel. Image addresses are noted but pictures are not downloaded; add photos in the editor. Importing from a website is not available yet.</p>
+          <p className="mt-4 text-sm text-muted">This page has {p.categories.reduce((n, c) => n + c.items.filter((i) => i.name || i.ref).length, 0)} of {MAX_ITEMS} items, so up to {Math.max(0, MAX_ITEMS - p.categories.reduce((n, c) => n + c.items.filter((i) => i.name || i.ref).length, 0))} more can be added. Your plan reads up to {p.maxRows} rows per file.</p>
+          <p className="mt-2 text-sm text-muted">This release imports from CSV and Excel. Image addresses are noted but pictures are not downloaded; add photos in the editor. Importing from a website is not available yet.</p>
           {p.history.length ? <Recent history={p.history} current={p.draftVersionNow} onUndo={undo} busy={busy !== ""} /> : null}
         </div>
       ) : null}
@@ -164,7 +165,12 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5" role="group" aria-label="Import summary">
             {([["New", plan.counts.added], ["Updated", plan.counts.updated], ["No change", plan.counts.unchanged], ["Skipped", plan.counts.skipped], ["Not imported", plan.counts.invalid]] as const).map(([k, v]) => <div key={k} className="rounded-control bg-surface p-3"><div className="text-2xl font-semibold">{v}</div><div className="text-sm text-muted">{k}</div></div>)}
           </div>
-          <p className="mb-2 text-sm text-muted">Valid rows: {plan.counts.valid} of {plan.counts.rows}. Items on this page: {itemsNow} → {itemsAfter} (a {kindWord} holds up to {MAX_ITEMS}). Your plan allows {p.maxRows} rows per import. Pages: no new pages are created. Photos: none are changed.</p>
+          <div className="mb-3 rounded-control bg-surface p-3 text-sm" aria-label="Capacity">
+            <p><strong>Source rows:</strong> {plan.counts.rows} in your file (your plan reads up to {p.maxRows} rows per import).</p>
+            <p><strong>Resulting items:</strong> {plan.itemsBefore} on the page now, {plan.itemsAfter} after this import. A {kindWord} page holds at most {MAX_ITEMS} items, so there is room for {plan.roomBefore} more.</p>
+            <p className="text-muted">Rows and items are different: several rows can update the same item, and some rows are skipped or can’t be imported. No pages are created and no photos are changed.</p>
+          </div>
+          {plan.counts.noRoom ? <Notice tone="warning" live>{plan.counts.noRoom} rows can’t be added because the page, a category or your row allowance is full. They are listed under Problems and in the error report; nothing is cut off silently. Split them across another page or remove items you no longer need.</Notice> : null}
           {plan.imagesPending ? <Notice tone="warning">{plan.imagesPending} rows have image addresses. Pictures are not downloaded by this import; add them in the editor.</Notice> : null}
           <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter rows">
             {([["all", "All"], ["problem", "Problems"], ["new", "New"], ["update", "Updates"]] as const).map(([v, t]) => <button key={v} type="button" aria-pressed={filter === v} onClick={() => setFilter(v)} className={`rounded-control px-3 py-1.5 text-sm ${filter === v ? "bg-brand text-white" : "bg-soft"}`}>{t}</button>)}
@@ -189,7 +195,7 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
       {step === 3 && done ? (
         <div className="max-w-[720px]">
           {done.noChanges ? <Notice tone="info">There was nothing to change, so your draft was left alone.</Notice> : <Notice title={undone ? "Import undone" : done.replayed ? "This import had already finished" : "Imported into your draft"} tone="info" live>{undone ? "Your draft is as it was before." : "Nothing is published yet. Open the editor to check the items and add photos, then publish when you’re happy."}</Notice>}
-          <ul className="mb-5 space-y-1 text-sm"><li>{done.counts.added} added</li><li>{done.counts.updated} updated</li><li>{done.counts.unchanged} already up to date</li><li>{done.counts.skipped} skipped</li><li>{done.counts.invalid} not imported (see the error report)</li></ul>
+          <ul className="mb-5 space-y-1 text-sm"><li>{done.counts.added} added</li><li>{done.counts.updated} updated</li><li>{done.counts.unchanged} already up to date</li><li>{done.counts.skipped} skipped</li><li>{done.counts.invalid} not imported (see the error report){done.counts.noRoom ? `, ${done.counts.noRoom} of them for lack of room` : ""}</li></ul>
           <div className="flex flex-wrap gap-2">
             <LinkButton href={p.onPageHref}>Open the editor</LinkButton>
             {done.counts.invalid || done.counts.warnings ? <Button variant="secondary" onClick={() => download("import-problems.csv", toCsv(errorReport(plan, headers)))}>Download error report</Button> : null}

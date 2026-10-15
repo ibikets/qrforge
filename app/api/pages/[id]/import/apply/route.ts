@@ -7,7 +7,7 @@ import { customer, isMissingTable, jerr, noStore, ownedPage } from "@/lib/pages/
 import { PLANS } from "@/lib/plans";
 
 const KEY = /^[A-Za-z0-9_-]{8,64}$/;
-type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; imagesNotFetched: number };
+type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; noRoom: number; imagesNotFetched: number };
 
 /**
  * Step 3: run the import into the DRAFT only. The server re-reads the file and recomputes everything; nothing the browser previewed is trusted.

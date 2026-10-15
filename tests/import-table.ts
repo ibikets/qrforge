@@ -45,6 +45,12 @@ ok(errorReport(p, ["Code"]).length === 3, "error report lists bad rows");
 { const starter: Category[] = [{ id: "s", name: "", items: [{ id: "b", name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [], ref: "", link: "" }] }];
   const q2 = planImport({ currency: "NGN", categories: starter }, interpretRows([["Name", "Category"], ["Rice", "Mains"]], 0, { name: 0, category: 1 }, "menu", "NGN"), "menu", opt(), 10);
   ok(q2.next.length === 1 && q2.next[0].name === "Mains" && q2.next[0].items.length === 1 && q2.next[0].items[0].name === "Rice", "plan: the empty starter row is replaced, not left behind"); }
+{ const many: string[][] = [["Name", "Category"], ...Array.from({ length: 130 }, (_, i) => ["Dish " + i, "C" + (i % 5)])];
+  const q3 = planImport({ currency: "NGN", categories: [] }, interpretRows(many, 0, { name: 0, category: 1 }, "menu", "NGN"), "menu", opt(), 500);
+  ok(q3.counts.added === 100 && q3.counts.rows === 130 && q3.counts.noRoom === 130 - q3.counts.added && q3.itemsAfter === q3.counts.added, "capacity: rows beyond the page cap are reported as no room, never silently dropped (" + q3.counts.added + " added, " + q3.counts.noRoom + " no room)");
+  ok(q3.rows.filter((r) => r.noRoom).every((r) => r.action === "invalid" && /No room/.test(r.reason)), "capacity: every refused row says why");
+  const q4 = planImport({ currency: "NGN", categories: [] }, interpretRows(many, 0, { name: 0, category: 1 }, "menu", "NGN"), "menu", opt(), 50);
+  ok(q4.counts.added === 50 && q4.counts.noRoom === 80, "capacity: plan row allowance reported the same way"); }
 const ex = exportRows("menu", "NGN", cats()); ok(ex[1][0] === "i1" && ex.length === 3, "export carries stable item ids");
 ok(safeCell("=SUM(A1)").startsWith("'") && safeCell("+1").startsWith("'") && safeCell("@x").startsWith("'"), "export: formulas neutralised");
 console.log(bad ? `${bad} FAILED` : "ALL PASS"); process.exit(bad ? 1 : 0);

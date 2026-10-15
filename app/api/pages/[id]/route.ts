@@ -13,7 +13,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const page = await ownedPage(id, c.userId);
   if (!page) return jerr(404, "This page could not be found.");
   if (page.lifecycle === "archived") return jerr(409, "Archived pages are read-only.", { code: "archived" });
-  const parsed = await readJson(req, 60_000);
+  const parsed = await readJson(req, 160_000); // a full page of 100 maximum-length items is about 92 KB
   if (!parsed || "tooLarge" in parsed) return jerr(413, "That request is too large.");
   const b = parsed.body as SaveBody;
   const expected = Number(b?.expectedVersion);

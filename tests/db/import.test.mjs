@@ -30,6 +30,8 @@ if (pa) {
   ok((await ins(a, pa, "key-aaaaaaaa")).ok, "a job can be recorded");
   const dup = await ins(a, pa, "key-aaaaaaaa"); ok(!dup.ok && dup.code === "23505", "the same key twice is refused by the database (no double apply)");
   const results = await Promise.all(Array.from({ length: 12 }, () => ins(a, pa, "key-race-0001"))); ok(results.filter((r) => r.ok).length === 1, "12 concurrent attempts with one key: exactly one wins");
+  const cas = await Promise.all(Array.from({ length: 12 }, async () => { const c = await mk(); try { return (await c.query("update qrforge.pages set draft = '{\"x\":1}', draft_version = draft_version + 1 where id = $1 and draft_version = 1 returning draft_version", [pa])).rowCount; } finally { await c.end(); } }));
+  ok(cas.reduce((a, b) => a + b, 0) === 1, "12 different jobs updating one draft version at once: exactly one wins (the same compare-and-set the import route uses)");
   ok((await ins(b, pa, "key-aaaaaaaa")).ok, "another customer may use the same key text independently");
   ok(!(await q("insert into qrforge.import_jobs(user_id,page_id,idem_key,mode) values($1,$2,'short','both')", [a, pa])).ok, "too-short key refused");
   ok(!(await q("insert into qrforge.import_jobs(user_id,page_id,idem_key,mode) values($1,$2,'key-badmode-1','overwrite')", [a, pa])).ok, "unknown mode refused");

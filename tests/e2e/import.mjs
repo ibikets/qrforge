@@ -128,6 +128,49 @@ const cat = await (await api("/api/pages", "POST", { title: "Cat", kind: "busine
 ok((await parse(cat.id, `${OUT}/menu.csv`, "menu.csv")).status === 422, "import refused on a page kind without items");
 ok((await api(`/api/pages/${id}/import/parse`, "POST", new FormData(), { origin: "https://evil.example" })).status === 403, "cross-site request blocked");
 
+
+// ---- retry protection beyond the idempotency key, capacity, published content
+{
+  const mk = async (title) => (await (await api("/api/pages", "POST", { title, kind: "menu" })).json()).id;
+  const nocode = `${OUT}/nocode.csv`; fs.writeFileSync(nocode, "Category,Name,Price\nMains,Egusi soup,2000\nMains,Pounded yam,1500\n");
+  const sp = (o) => spec({ mapping: { category: 0, name: 1, price: 2 }, ...o });
+  const p2 = await mk("Dup test");
+  let r = await (await send(p2, nocode, "nocode.csv", sp({ key: "nocode-key-0001" }))).json(); ok(r.counts.added === 2, "rows without a code: first import adds both");
+  r = await (await send(p2, nocode, "nocode.csv", sp({ key: "nocode-key-0002", expectedVersion: (await pg(p2)).draft_version }))).json();
+  ok(r.counts.added === 0 && r.counts.skipped === 2 && items(await pg(p2)).length === 2, "same file as a NEW job, no codes: skipped as possible duplicates, nothing doubled");
+  r = await (await send(p2, nocode, "nocode.csv", sp({ key: "nocode-key-0003", expectedVersion: (await pg(p2)).draft_version, options: { mode: "both", duplicates: "add", fields: [] } }))).json();
+  ok(r.counts.added === 2 && items(await pg(p2)).length === 4, "duplicates are added only when the owner explicitly chooses to");
+  // two different jobs racing on the same draft version
+  const p3 = await mk("Race test"); const v3 = (await pg(p3)).draft_version;
+  const race = await Promise.all([1, 2, 3, 4].map((n) => send(p3, nocode, "nocode.csv", sp({ key: "race-diff-key-" + n, expectedVersion: v3 }))));
+  const codes = race.map((x) => x.status).sort();
+  ok(codes.filter((c) => c === 200).length === 1 && codes.filter((c) => c === 409).length === 3 && items(await pg(p3)).length === 2, "4 different jobs on one draft version: exactly one applies (" + codes + ")");
+  // the same job (same key) submitted concurrently
+  const p4 = await mk("Same key race"); const v4 = (await pg(p4)).draft_version;
+  const same = await Promise.all([1, 2, 3].map(() => send(p4, nocode, "nocode.csv", sp({ key: "same-key-racing", expectedVersion: v4 }))));
+  ok(items(await pg(p4)).length === 2 && same.some((x) => x.status === 200), "3 concurrent submits of one job: applied once (" + same.map((x) => x.status) + ")");
+  // capacity: 130 source rows, page holds 100
+  const big = `${OUT}/130.csv`; fs.writeFileSync(big, "Category,Name,Description,Price\n" + Array.from({ length: 130 }, (_, i) => `C${i % 5},Dish ${i},${"d".repeat(400)},${100 + i}`).join("\n") + "\n");
+  const p5 = await mk("Capacity"); const cr = await (await send(p5, big, "130.csv", spec({ key: "capacity-key-001", mapping: { category: 0, name: 1, description: 2, price: 3 }, expectedVersion: (await pg(p5)).draft_version }))).json();
+  ok(cr.counts.rows === 130 && cr.counts.added === 100 && cr.counts.noRoom === 30 && cr.counts.invalid === 30 && items(await pg(p5)).length === 100, "130 source rows: 100 items added, 30 reported as no room (not silently dropped)");
+  const cur5 = await pg(p5);
+  const put = await api(`/api/pages/${p5}`, "PUT", { title: "Capacity", content: cur5.draft, expectedVersion: cur5.draft_version });
+  ok(put.status === 200, "a full page of long items can still be saved in the editor (" + put.status + ")");
+  // published content stays untouched
+  const p6 = await mk("Live"); let c6 = await pg(p6);
+  const hb = c6.draft.blocks.find((b) => b.type === "header"); hb.name = "Live menu"; const ib = c6.draft.blocks.find((b) => b.type === "items"); ib.categories = [{ id: "cc1", name: "Mains", items: [{ id: "it1", name: "Original dish", description: "", price: "1000", imageId: null, meta: null, status: "available", tags: [], ref: "O1", link: "" }] }];
+  let sv = await api(`/api/pages/${p6}`, "PUT", { title: "Live", content: c6.draft, expectedVersion: c6.draft_version }); ok(sv.status === 200, "live-test page saved");
+  c6 = await pg(p6); const pub = await api(`/api/pages/${p6}/publish`, "POST", { expectedVersion: c6.draft_version }); ok(pub.status === 200, "page published (" + pub.status + ")");
+  const T0 = await ctl(); const live0 = T0.tables.pages.find((p) => p.id === p6); const revs0 = JSON.stringify(T0.tables.page_revisions.filter((x) => x.page_id === p6));
+  fs.writeFileSync(`${OUT}/live.csv`, "Item code,Name,Price\nO1,Changed dish,5000\nN1,Brand new dish,700\n");
+  const li = await (await send(p6, `${OUT}/live.csv`, "live.csv", spec({ key: "live-key-000001", mapping: { ref: 0, name: 1, price: 2 }, expectedVersion: live0.draft_version }))).json();
+  const T1 = await ctl(); const live1 = T1.tables.pages.find((p) => p.id === p6);
+  ok(li.counts.added === 1 && li.counts.updated === 1 && live1.published_version === live0.published_version && live1.lifecycle === "published", "import into a published page changes the draft only");
+  ok(JSON.stringify(T1.tables.page_revisions.filter((x) => x.page_id === p6)) === revs0, "the published revision is byte-identical after the import");
+  const html = await (await fetch(`${BASE}/p/${live1.public_id}`)).text(); ok(/Original dish/.test(html) && !/Changed dish|Brand new dish/.test(html), "the public page still shows the old content");
+  ok(items(live1).some((i) => i.name === "Changed dish") && live1.draft_version > live0.draft_version, "…while the draft holds the imported changes");
+}
+
 // mobile
 const M = await open({ width: 390, height: 900, signedIn: true }); const mp = M.page;
 await mp.goto(`${BASE}/workspace/pages/${id}/import`, { waitUntil: "networkidle" }); await mp.locator("#imp-file").setInputFiles(`${OUT}/menu.csv`);
