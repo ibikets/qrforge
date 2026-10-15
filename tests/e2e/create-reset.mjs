@@ -21,12 +21,12 @@ await page.getByLabel("Type", { exact: true }).selectOption("vcard");
 ok((await page.getByLabel("First name").inputValue()) === "", "Create: contact fields are empty");
 // hosted card form
 await page.goto(BASE + "/workspace/pages/new", { waitUntil: "load" });
-await page.getByLabel("Card name").fill("Work card");
-await page.getByRole("button", { name: "Create card" }).click();
+await page.getByLabel("Page name").fill("Work card");
+await page.getByRole("button", { name: "Create page" }).click();
 await page.waitForURL(/\/workspace\/pages\/[^/]+$/, { timeout: 10000 }); await page.waitForTimeout(500);
 await page.goto(BASE + "/workspace/pages", { waitUntil: "load" });
 await page.getByRole("link", { name: /New|Create/ }).first().click();
 await page.waitForURL(/\/workspace\/pages\/new/); 
-ok((await page.getByLabel("Card name").inputValue()) === "", "New card: name field is empty");
-ok(await page.getByRole("button", { name: "Create card" }).isEnabled(), "New card: button is ready");
+ok((await page.getByLabel("Page name").inputValue()) === "", "New card: name field is empty");
+ok(await page.getByRole("button", { name: "Create page" }).isEnabled(), "New card: button is ready");
 await browser.close(); console.log(bad ? `${bad} FAILED` : "all passed"); process.exit(bad ? 1 : 0);

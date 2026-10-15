@@ -1,3 +1,4 @@
+import { kindLabel } from "@/lib/pages/kinds";
 import Link from "next/link";
 import { ActionButton } from "@/components/admin/Mutation";
 import { Badge, DataTable, Denied, Empty, LoadError, PageHead, Panel, Td, lagos, linkCls } from "@/components/admin/kit";
@@ -41,7 +42,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Re
           <DataTable label="Hosted pages" head={["Title", "Address", "Status", "Owner", "Updated", "Action"]}>
             {rows.data.map((r) => (
               <tr key={r.id}>
-                <Td>{r.title}</Td>
+                <Td>{r.title}<span className="block text-xs text-muted">{kindLabel(r.kind)}</span></Td>
                 <Td><a className={linkCls} href={`/p/${r.public_id}`} target="_blank" rel="noopener noreferrer">/p/{r.public_id}</a></Td>
                 <Td>{r.taken_down_at ? <Badge tone="bad">Disabled</Badge> : <Badge tone={r.lifecycle === "published" ? "good" : "neutral"}>{r.lifecycle}</Badge>}</Td>
                 <Td>{s.staff.caps.has("customers.read") ? <Link className={linkCls} href={`/admin/customers/${r.user_id}`}>Open customer</Link> : "–"}</Td>

@@ -1,9 +1,9 @@
 import { adm } from "@/lib/admin/db";
-import { normaliseCard, validateCard } from "@/lib/pages/card";
+import { engineFor } from "@/lib/pages/kinds";
 import { PAGE_BUCKET, PAGE_COLS, UUID, collectMedia, customer, jerr, mediaBelongs, ownedPage, refreshPage, type PageRow } from "@/lib/pages/server";
 import { readJson } from "@/lib/request-guards";
 
-type SaveBody = { title?: unknown; card?: unknown; expectedVersion?: unknown };
+type SaveBody = { title?: unknown; card?: unknown; content?: unknown; expectedVersion?: unknown };
 
 /** Save the draft with optimistic concurrency: it only applies when expectedVersion is still the current version. */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -19,11 +19,13 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const expected = Number(b?.expectedVersion);
   if (!Number.isInteger(expected)) return jerr(400, "Bad request");
   const title = typeof b.title === "string" ? b.title.trim().slice(0, 80) : page.title;
-  if (!title) return jerr(422, "The card needs a name.", { field: "title" });
-  const card = normaliseCard(b.card);
-  const errors = validateCard(card, false);
+  if (!title) return jerr(422, "The page needs a name.", { field: "title" });
+  const eng = engineFor(page.kind);
+  if (!eng) return jerr(422, "This kind of page is not available yet.", { code: "kind" });
+  const card = eng.normalise(b.content ?? b.card);
+  const errors = eng.validate(card, false);
   if (Object.keys(errors).length) return jerr(422, "Fix the highlighted fields.", { errors });
-  if (!(await mediaBelongs(page.id, card))) return jerr(422, "That image does not belong to this page.", { code: "media" });
+  if (!(await mediaBelongs(page.id, page.kind, card))) return jerr(422, "That image does not belong to this page.", { code: "media" });
 
   const { data, error } = await adm().from("pages")
     .update({ title, draft: card, draft_version: expected + 1, updated_at: new Date().toISOString() })
@@ -32,9 +34,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!data) {
     const cur = await ownedPage(page.id, c.userId);
     if (!cur) return jerr(404, "This page could not be found.");
-    return jerr(409, "This page was changed somewhere else. Your edits are kept here; reload to compare.", { code: "conflict", current: { version: cur.draft_version, title: cur.title, card: normaliseCard(cur.draft) } });
+    return jerr(409, "This page was changed somewhere else. Your edits are kept here; reload to compare.", { code: "conflict", current: { version: cur.draft_version, title: cur.title, card: eng.normalise(cur.draft) } });
   }
-  await collectMedia(page.id, [card.portraitId, card.logoId]);
+  await collectMedia(page.id, page.kind, eng.mediaRefs(card).map((r) => r.id));
   return Response.json({ version: data.draft_version }, { headers: { "Cache-Control": "no-store" } });
 }
 

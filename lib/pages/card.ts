@@ -191,17 +191,20 @@ export const initials = (name: string) =>
 const VT: Record<string, string> = { mobile: "CELL", work: "WORK", home: "HOME" };
 
 /** photoJpeg: small square JPEG (see media.ts). Omitted when absent; never replaced by the logo. */
-export function buildVcf(s: Snapshot, photoJpeg?: Uint8Array | null): string {
+export function buildVcf(s: Snapshot, photoJpeg?: Uint8Array | null, opts: { org?: boolean; address?: string } = {}): string {
   const parts = s.name.trim().split(/\s+/);
   const last = parts.length > 1 ? parts.pop()! : "";
   const first = parts.join(" ");
-  const L = ["BEGIN:VCARD", "VERSION:3.0", `N:${vEsc(last)};${vEsc(first)};;;`, `FN:${vEsc(s.name)}`];
+  // An organisation has no personal name parts: N stays empty and the contact shows as a company.
+  const L = ["BEGIN:VCARD", "VERSION:3.0", opts.org ? "N:;;;;" : `N:${vEsc(last)};${vEsc(first)};;;`, `FN:${vEsc(s.name)}`];
+  if (opts.org) L.push("X-ABShowAs:COMPANY");
   if (s.company) L.push(`ORG:${vEsc(s.company)}`);
   if (s.role) L.push(`TITLE:${vEsc(s.role)}`);
   for (const p of s.phones) L.push(`TEL;TYPE=${VT[p.label] ?? "CELL"}:${p.text.trim()}`);
   for (const m of s.emails) L.push(`EMAIL;TYPE=INTERNET,${m.label === "home" ? "HOME" : "WORK"}:${m.text}`);
   for (const w of s.websites) L.push(`URL:${w.href}`);
   for (const x of s.socials) L.push(`URL:${x.href}`);
+  if (opts.address) L.push(`ADR;TYPE=WORK:;;${vEsc(opts.address.replace(/\s*\n\s*/g, ", "))};;;;`);
   if (s.intro) L.push(`NOTE:${vEsc(s.intro)}`);
   if (photoJpeg?.length) L.push(`PHOTO;ENCODING=b;TYPE=JPEG:${Buffer.from(photoJpeg).toString("base64")}`);
   L.push("END:VCARD");

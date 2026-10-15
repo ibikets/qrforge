@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { revalidateTag } from "next/cache";
 import { adm } from "@/lib/admin/db";
-import type { Card } from "@/lib/pages/card";
+import { engineFor } from "@/lib/pages/kinds";
 import { PLANS, type PlanId } from "@/lib/plans";
 import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
 import { getSession, supabaseConfigured } from "@/lib/supabase";
@@ -23,7 +23,7 @@ export const jerr = (status: number, error: string, extra: Record<string, unknow
 export const refreshPage = (publicId: string) => revalidateTag(pageTag(publicId), { expire: 0 }) // never serve a stale card after publish, unpublish, delete or takedown;
 
 export type PageRow = {
-  id: string; user_id: string; kind: "card"; title: string; public_id: string; draft: unknown; draft_version: number;
+  id: string; user_id: string; kind: string; title: string; public_id: string; draft: unknown; draft_version: number;
   published_version: number | null; lifecycle: "draft" | "published" | "unpublished" | "archived" | "deleted";
   taken_down_at: string | null; created_at: string; updated_at: string; published_at: string | null;
 };
@@ -54,14 +54,16 @@ export function isMissingTable(error: { code?: string; message?: string } | null
 }
 
 /** Delete page_media rows (and files) that the draft and every kept revision no longer reference. */
-export async function collectMedia(pageId: string, draftIds: (string | null)[]) {
+export async function collectMedia(pageId: string, kind: string, draftIds: (string | null)[]) {
   const db = adm();
+  const eng = engineFor(kind);
+  if (!eng) return;
   const [{ data: media }, { data: revs }] = await Promise.all([
     db.from("page_media").select("id,path,vcf_path").eq("page_id", pageId),
     db.from("page_revisions").select("content").eq("page_id", pageId),
   ]);
   const keep = new Set<string>(draftIds.filter((x): x is string => !!x));
-  for (const r of revs ?? []) for (const k of ["portraitId", "logoId"]) { const v = (r.content as Record<string, unknown>)?.[k]; if (typeof v === "string") keep.add(v); }
+  for (const r of revs ?? []) { const snap = eng.readSnapshot(r.content); if (snap) for (const id of eng.snapshotMedia(snap)) keep.add(id); }
   const drop = (media ?? []).filter((m: { id: string }) => !keep.has(m.id));
   if (!drop.length) return;
   await db.storage.from(PAGE_BUCKET).remove(drop.flatMap((m: { path: string; vcf_path: string | null }) => [m.path, ...(m.vcf_path ? [m.vcf_path] : [])]));
@@ -69,7 +71,7 @@ export async function collectMedia(pageId: string, draftIds: (string | null)[]) 
 }
 
 export type PublicResult =
-  | { state: "ok"; publicId: string; version: number; snapshot: unknown; grace: boolean }
+  | { state: "ok"; publicId: string; kind: string; version: number; snapshot: unknown; grace: boolean }
   | { state: "unavailable" }
   | { state: "unconfigured" };
 
@@ -78,7 +80,7 @@ export async function loadPublic(publicId: string): Promise<PublicResult> {
   if (!PUBLIC_ID.test(publicId)) return { state: "unavailable" };
   if (!supabaseConfigured || !process.env.SUPABASE_SERVICE_ROLE_KEY) return { state: "unconfigured" };
   const db = adm();
-  const { data: page, error } = await db.from("pages").select("id,user_id,lifecycle,published_version,taken_down_at").eq("public_id", publicId).maybeSingle();
+  const { data: page, error } = await db.from("pages").select("id,user_id,kind,lifecycle,published_version,taken_down_at").eq("public_id", publicId).maybeSingle();
   if (error && !isMissingTable(error)) throw new Error("page lookup failed");
   if (!page || page.lifecycle !== "published" || page.published_version == null || page.taken_down_at) return { state: "unavailable" };
   // Lifecycle policy: the page stays public while the owner's plan is active and for GRACE_DAYS after it lapses.
@@ -88,25 +90,27 @@ export async function loadPublic(publicId: string): Promise<PublicResult> {
   if (end + GRACE_DAYS * 86_400_000 < now) return { state: "unavailable" };
   const { data: rev } = await db.from("page_revisions").select("content").eq("page_id", page.id).eq("version", page.published_version).maybeSingle();
   if (!rev) return { state: "unavailable" };
-  return { state: "ok", publicId, version: page.published_version, snapshot: rev.content, grace: end < now };
+  return { state: "ok", publicId, kind: page.kind as string, version: page.published_version, snapshot: rev.content, grace: end < now };
 }
 
 /** Media row for a published snapshot reference, or null. Never returns draft-only media. */
 export async function publicMedia(publicId: string, mediaId: string) {
   const r = await loadPublic(publicId);
   if (r.state !== "ok" || !UUID.test(mediaId)) return null;
-  const s = r.snapshot as { portraitId?: string | null; logoId?: string | null };
-  if (mediaId !== s.portraitId && mediaId !== s.logoId) return null;
+  const eng = engineFor(r.kind);
+  const snap = eng?.readSnapshot(r.snapshot);
+  if (!eng || !snap || !eng.snapshotMedia(snap).includes(mediaId)) return null;
   const { data } = await adm().from("page_media").select("id,path,vcf_path,mime").eq("id", mediaId).maybeSingle();
   return data as { id: string; path: string; vcf_path: string | null; mime: string } | null;
 }
 
-/** Media referenced by a draft must belong to this page. */
-export async function mediaBelongs(pageId: string, card: Card): Promise<boolean> {
-  const ids = [card.portraitId, card.logoId].filter((x): x is string => !!x);
-  if (!ids.length) return true;
-  const { data } = await adm().from("page_media").select("id,kind").eq("page_id", pageId).in("id", ids);
+/** Media referenced by a draft must belong to this page and have the kind the slot expects. */
+export async function mediaBelongs(pageId: string, kind: string, content: unknown): Promise<boolean> {
+  const eng = engineFor(kind);
+  if (!eng) return false;
+  const refs = eng.mediaRefs(content);
+  if (!refs.length) return true;
+  const { data } = await adm().from("page_media").select("id,kind").eq("page_id", pageId).in("id", refs.map((r) => r.id));
   const kinds = new Map((data ?? []).map((m: { id: string; kind: string }) => [m.id, m.kind]));
-  return (!card.portraitId || kinds.get(card.portraitId) === "portrait") && (!card.logoId || kinds.get(card.logoId) === "logo");
+  return refs.every((r) => kinds.get(r.id) === r.kind);
 }
-

@@ -6,8 +6,8 @@ await ctl({ reset: true }); await ctl({ push: { subscriptions: [sub("pro", 20)] 
 const { browser, page, logs } = await open({ width: 1440, height: 1100, signedIn: true });
 const crashed = async () => (await page.getByText("We couldn’t load this page").count()) > 0;
 await page.goto(BASE + "/workspace/pages/new", { waitUntil: "load" });
-await page.getByLabel("Card name").fill("Typing test");
-await page.getByRole("button", { name: "Create card" }).click();
+await page.getByLabel("Page name").fill("Typing test");
+await page.getByRole("button", { name: "Create page" }).click();
 await page.waitForURL(/\/workspace\/pages\/[0-9a-f-]{36}$/);
 const pageId = page.url().split("/").pop();
 await page.getByLabel("Name", { exact: true }).waitFor();

@@ -31,11 +31,11 @@ await page.goto(BASE + "/workspace/pages", { waitUntil: "networkidle" });
 ok(await page.getByText("No pages yet").isVisible(), "empty list state");
 ok(await page.getByText("0 of 5 hosted pages used on your Pro plan").isVisible(), "usage shown against the plan limit");
 await page.goto(BASE + "/workspace/pages/new", { waitUntil: "networkidle" });
-await page.getByRole("button", { name: "Create card" }).click();
-await page.getByText("Give the card a name").first().waitFor();
+await page.getByRole("button", { name: "Create page" }).click();
+await page.getByText("Give the page a name").first().waitFor();
 ok(true, "create refused without a card name");
-await page.getByLabel("Card name").fill("Ada – work card");
-await page.getByRole("button", { name: "Create card" }).click();
+await page.getByLabel("Page name").fill("Ada – work card");
+await page.getByRole("button", { name: "Create page" }).click();
 await page.waitForURL(/\/workspace\/pages\/[0-9a-f-]{36}$/);
 const pageId = page.url().split("/").pop();
 await page.getByLabel("Name", { exact: true }).waitFor();
@@ -306,7 +306,7 @@ await ctl({ set: { subscriptions: [sub("pro", 20), sub("pro", 20, { user_id: OTH
 // ---------- Free plan ----------
 await ctl({ set: { subscriptions: [] } });
 await page.goto(`${BASE}/workspace/pages/new`, { waitUntil: "networkidle" });
-ok(await page.getByText("Digital business cards need Pro or Business").isVisible(), "Free: upgrade prompt, not a dead end");
+ok(await page.getByText("Hosted pages need Pro or Business").isVisible(), "Free: upgrade prompt, not a dead end");
 ok((await apiJson(`/api/pages`, "POST", { title: "x" })).status === 403, "Free: create API refuses");
 ok((await page.request.get(`${BASE}/create`)).status() === 200, "static generator unaffected");
 
