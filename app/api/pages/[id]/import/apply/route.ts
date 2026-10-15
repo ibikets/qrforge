@@ -1,5 +1,5 @@
 import { adm } from "@/lib/admin/db";
-import { isImportKind, itemsBlock, readUpload } from "@/lib/import/server";
+import { isImportKind, itemsBlock, readUpload, testOrigins } from "@/lib/import/server";
 import { fieldsFor, interpretRows, planImport, type Field, type Mapping, type Options } from "@/lib/import/table";
 import { engineFor } from "@/lib/pages/kinds";
 import type { PageContent } from "@/lib/pages/blocks";
@@ -7,7 +7,7 @@ import { customer, isMissingTable, jerr, noStore, ownedPage } from "@/lib/pages/
 import { PLANS } from "@/lib/plans";
 
 const KEY = /^[A-Za-z0-9_-]{8,64}$/;
-type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; noRoom: number; imagesNotFetched: number };
+type Counts = { rows: number; valid: number; invalid: number; skipped: number; added: number; updated: number; unchanged: number; warnings: number; noRoom: number; imagesNotFetched: number; source?: { type: "website"; url: string; ownershipConfirmed: true; at: string } };
 
 /**
  * Step 3: run the import into the DRAFT only. The server re-reads the file and recomputes everything; nothing the browser previewed is trusted.
@@ -22,7 +22,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (page.lifecycle === "archived") return jerr(409, "Archived pages are read-only.", { code: "archived" });
   if (!isImportKind(page.kind)) return jerr(422, "Import is available for menus and catalogues.", { code: "kind" });
   let form: FormData; try { form = await req.formData(); } catch { return jerr(400, "Invalid request."); }
-  let spec: { sheet?: unknown; headerRow?: unknown; mapping?: unknown; options?: unknown; edits?: unknown; key?: unknown; expectedVersion?: unknown };
+  let spec: { sheet?: unknown; headerRow?: unknown; mapping?: unknown; options?: unknown; edits?: unknown; source?: unknown; key?: unknown; expectedVersion?: unknown };
   try { const raw = form.get("spec"); if (typeof raw !== "string" || raw.length > 4000) throw 0; spec = JSON.parse(raw); } catch { return jerr(400, "Bad request"); }
   const key = String(spec.key ?? ""), expected = Number(spec.expectedVersion), sheet = Number(spec.sheet), headerRow = Number(spec.headerRow);
   if (!KEY.test(key) || !Number.isInteger(expected) || !Number.isInteger(sheet) || sheet < 0 || !Number.isInteger(headerRow) || headerRow < 0) return jerr(400, "Bad request");
@@ -40,6 +40,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (pj && pj.after_version !== null) return Response.json({ ok: true, replayed: true, counts: pj.counts, jobId: pj.id, version: pj.after_version, status: pj.status }, { headers: noStore });
 
   const up = await readUpload(form.get("file")); if (up instanceof Response) return up;
+  let source: Counts["source"];
+  const sr = (spec.source ?? null) as { type?: unknown; url?: unknown; ownershipConfirmed?: unknown } | null;
+  if (sr) {
+    let host = ""; try { const u = new URL(String(sr.url)); host = u.protocol === "https:" || testOrigins().includes(u.origin) ? u.href : ""; } catch { /* below */ }
+    if (sr.type !== "website" || sr.ownershipConfirmed !== true || !host || host.length > 200) return jerr(422, "Confirm that you own the website or may reuse its content.", { code: "source" });
+    source = { type: "website", url: host, ownershipConfirmed: true, at: new Date().toISOString() }; up.name = host;
+  }
   const base = up.sheets.filter((s) => s.rows.length > 0)[sheet]?.rows; if (!base) return jerr(422, "That sheet could not be found in the file.");
   const rows = base.map((r) => [...r]);
   for (const e of Array.isArray(spec.edits) ? spec.edits.slice(0, 1000) : []) { // row-level corrections typed in the review step
@@ -51,7 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (page.draft_version !== expected) return jerr(409, "This page was changed somewhere else since you opened the import. Reload it and run the import again.", { code: "conflict" });
   const limit = PLANS[c.plan].maxImportRows;
   const plan = planImport({ currency: blk.currency, categories: blk.categories }, interpretRows(rows, headerRow, mapping, page.kind, blk.currency), page.kind, options, limit);
-  const counts: Counts = { ...plan.counts, imagesNotFetched: plan.imagesPending };
+  const counts: Counts = { ...plan.counts, imagesNotFetched: plan.imagesPending, ...(source ? { source } : {}) };
   if (plan.counts.added + plan.counts.updated === 0) return Response.json({ ok: true, noChanges: true, counts }, { headers: noStore });
 
   const next = { ...content, blocks: content.blocks.map((b) => (b === blk ? { ...blk, categories: plan.next } : b)) } as PageContent;
@@ -72,5 +79,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return upd.error ? jerr(500, "We couldn’t save the import. Nothing was changed. Try again.") : jerr(409, "This page was changed somewhere else since you opened the import. Reload it and run the import again.", { code: "conflict" });
   }
   await db.from("import_jobs").update({ after_version: expected + 1 }).eq("id", jobId);
-  return Response.json({ ok: true, counts, jobId, version: expected + 1 }, { headers: noStore });
+  const images = plan.rows.filter((r) => (r.action === "new" || r.action === "update") && r.parsed.imageUrl && r.itemId).slice(0, 100).map((r) => ({ itemId: r.itemId!, url: r.parsed.imageUrl!, name: r.parsed.name ?? "" }));
+  return Response.json({ ok: true, counts, jobId, version: expected + 1, images }, { headers: noStore });
 }

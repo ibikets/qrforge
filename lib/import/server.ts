@@ -36,3 +36,6 @@ export const fileResponse = (format: "csv" | "xlsx", base: string, sheetName: st
   const body = format === "xlsx" ? new Uint8Array(writeXlsx([{ name: sheetName, rows }])) : new TextEncoder().encode("﻿" + toCsv(rows));
   return new Response(body, { headers: { "Content-Type": format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${clean}.${format}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 };
+
+/** Test-only allowance for a local fixture website. Never honoured on Vercel (VERCEL is always set there). */
+export const testOrigins = () => (process.env.VERCEL ? [] : (process.env.IMPORT_FETCH_TEST_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean));

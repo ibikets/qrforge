@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { controlClass } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
-import { toCsv } from "@/lib/import/export";
+import { toCsv, toCsvRaw } from "@/lib/import/export";
 import { FIELD_LABEL, UPDATABLE, autoMap, detectHeaderRow, errorReport, fieldsFor, interpretRows, planImport, type Action, type Field, type ImportKind, type Mapping, type Options, type PlanRow } from "@/lib/import/table";
 import { MAX_ITEMS } from "@/lib/pages/blocks";
 import type { Category } from "@/lib/pages/blocks";
@@ -29,8 +29,17 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
   const [filter, setFilter] = useState<"all" | "problem" | "new" | "update">("all");
   const [msg, setMsg] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState<"" | "reading" | "importing">("");
-  const [done, setDone] = useState<{ counts: Counts; jobId?: string; version?: number; replayed?: boolean; noChanges?: boolean } | null>(null);
+  const [done, setDone] = useState<{ counts: Counts; jobId?: string; version?: number; replayed?: boolean; noChanges?: boolean; images?: { itemId: string; url: string; name: string }[] } | null>(null);
+  const [pics, setPics] = useState<Record<string, { status: string; reason?: string }>>({});
+  const [picOk, setPicOk] = useState(false);
+  const [picBusy, setPicBusy] = useState(false);
+  const picAbort = useRef(false);
   const [undone, setUndone] = useState(false);
+  const [src, setSrc] = useState<"file" | "web">("file");
+  const [webUrl, setWebUrl] = useState("");
+  const [webOk, setWebOk] = useState(false);
+  const [source, setSource] = useState<{ type: "website"; url: string; ownershipConfirmed: true } | null>(null);
+  const [webErr, setWebErr] = useState<string | null>(null);
   const key = useRef(newKey()); const abort = useRef<AbortController | null>(null); const live = useRef<HTMLHeadingElement>(null);
   const labels = FIELD_LABEL(p.kind);
   const kindWord = p.kind === "menu" ? "menu" : "catalogue";
@@ -45,7 +54,7 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
 
   function go(n: number) { setStep(n); setTimeout(() => live.current?.focus(), 0); }
   async function read(f: File) {
-    setBusy("reading"); setMsg(null); setFile(f); setEdits({}); key.current = newKey();
+    setBusy("reading"); setMsg(null); setFile(f); setSource(null); setEdits({}); key.current = newKey();
     try {
       const fd = new FormData(); fd.set("file", f);
       const r = await fetch(`/api/pages/${p.pageId}/import/parse`, { method: "POST", body: fd }); const j = await r.json().catch(() => ({}));
@@ -54,13 +63,25 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
     } catch { setMsg({ tone: "error", text: "We couldn’t reach Qrenuvi. Check your connection and choose the file again." }); }
     setBusy("");
   }
+  async function readWebsite(e: React.FormEvent) {
+    e.preventDefault(); if (busy) return;
+    setBusy("reading"); setMsg(null); setWebErr(null); setEdits({}); key.current = newKey();
+    try {
+      const r = await fetch(`/api/pages/${p.pageId}/import/website`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: webUrl, confirm: webOk }) }); const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setWebErr(j.error ?? "We couldn’t read that page."); setBusy(""); return; }
+      if (!j.count) { setWebErr((j.notes as string[] | undefined)?.join(" ") || "Nothing importable was found on that page."); setBusy(""); return; }
+      setFile(new File([toCsvRaw(j.sheet.rows)], "website.csv", { type: "text/csv" })); setSource({ type: "website", url: j.sourceUrl, ownershipConfirmed: true });
+      const ps = { name: j.sourceUrl as string, notes: j.notes as string[], sheets: [j.sheet as Sheet] }; setParsed(ps); setSheetIx(0); startSheet(ps.sheets[0]); go(1);
+    } catch { setWebErr("We couldn’t reach Qrenuvi. Check your connection and try again."); }
+    setBusy("");
+  }
   function startSheet(s: Sheet) { const h = detectHeaderRow(s.rows, p.kind); setHeaderRow(h); setMap(autoMap(s.rows[h] ?? [], p.kind)); setEdits({}); }
   async function run() {
     if (!file || busy) return;
     setBusy("importing"); setMsg(null); abort.current = new AbortController();
     const editsList = Object.entries(edits).map(([k, v]) => { const [r, c] = k.split(":").map(Number); return [r, c, v]; });
     const fd = new FormData(); fd.set("file", file);
-    fd.set("spec", JSON.stringify({ sheet: sheetIx, headerRow, mapping: map, options: opt, edits: editsList, key: key.current, expectedVersion: p.version }));
+    fd.set("spec", JSON.stringify({ sheet: sheetIx, headerRow, mapping: map, options: opt, edits: editsList, source, key: key.current, expectedVersion: p.version }));
     try {
       const r = await fetch(`/api/pages/${p.pageId}/import/apply`, { method: "POST", body: fd, signal: abort.current.signal }); const j = await r.json().catch(() => ({}));
       if (!r.ok) { setMsg({ tone: "error", text: (j.error ?? "The import didn’t finish. Nothing was changed.") + (j.code === "conflict" ? "" : " Your choices are kept; you can try again.") }); setBusy(""); return; }
@@ -69,6 +90,19 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
       setMsg({ tone: "error", text: (e as Error).name === "AbortError" ? "Import cancelled. If it had already finished it will show under Recent imports; trying again is safe and never adds anything twice." : "We lost the connection. Trying again is safe: it will not add anything twice." });
     }
     setBusy("");
+  }
+  async function fetchPictures() {
+    if (!done?.images || picBusy) return; setPicBusy(true); picAbort.current = false;
+    const todo = done.images.filter((i) => pics[i.itemId]?.status !== "added" && pics[i.itemId]?.status !== "skipped");
+    for (let n = 0; n < todo.length && !picAbort.current; n += 3) {
+      const batch = todo.slice(n, n + 3);
+      try {
+        const r = await fetch(`/api/pages/${p.pageId}/import/images`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: picOk, items: batch.map((b) => ({ itemId: b.itemId, url: b.url })) }) }); const j = await r.json().catch(() => ({}));
+        if (!r.ok) { setPics((m) => ({ ...m, ...Object.fromEntries(batch.map((b) => [b.itemId, { status: "failed", reason: j.error ?? "Could not add the pictures." }])) })); break; }
+        setPics((m) => ({ ...m, ...Object.fromEntries((j.results as { itemId: string; status: string; reason?: string }[]).map((x) => [x.itemId, x])) }));
+      } catch { setPics((m) => ({ ...m, ...Object.fromEntries(batch.map((b) => [b.itemId, { status: "failed", reason: "Connection lost. Try again." }])) })); break; }
+    }
+    setPicBusy(false);
   }
   async function undo(jobId: string) {
     setBusy("importing"); setMsg(null);
@@ -101,14 +135,30 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
             </div>
             <p className="mt-3 text-sm text-muted">To change existing items in bulk, export them first. The exported <em>Item ID</em> column lets the import find the same items again.</p>
           </div>
-          <div className="rounded-panel bg-surface p-5">
-            <h3 className="mb-2 font-medium">2. Choose your file</h3>
-            <label htmlFor="imp-file" className="mb-1 block text-sm font-medium">CSV or Excel (.xlsx) file, up to 2 MB</label>
-            <input id="imp-file" type="file" accept=".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy !== ""} className={`${controlClass} bg-surface`} onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); }} />
-            <p role="status" className="mt-2 text-sm text-muted">{busy === "reading" ? "Reading your file…" : "Formulas, macros and links to other workbooks are never run or followed; only the values in the file are read."}</p>
+          <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Where are your items?">
+            {([["file", "A spreadsheet file"], ["web", "A website page"]] as const).map(([v, t]) => <button key={v} type="button" aria-pressed={src === v} onClick={() => { setSrc(v); setMsg(null); }} className={`rounded-control px-4 py-2 text-sm font-medium ${src === v ? "bg-brand text-white" : "bg-soft"}`}>{t}</button>)}
           </div>
+          {src === "file" ? (
+            <div className="rounded-panel bg-surface p-5">
+              <h3 className="mb-2 font-medium">2. Choose your file</h3>
+              <label htmlFor="imp-file" className="mb-1 block text-sm font-medium">CSV or Excel (.xlsx) file, up to 2 MB</label>
+              <input id="imp-file" type="file" accept=".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy !== ""} className={`${controlClass} bg-surface`} onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); }} />
+              <p role="status" className="mt-2 text-sm text-muted">{busy === "reading" ? "Reading your file…" : "Formulas, macros and links to other workbooks are never run or followed; only the values in the file are read."}</p>
+            </div>
+          ) : (
+            <form onSubmit={readWebsite} noValidate className="rounded-panel bg-surface p-5">
+              <h3 className="mb-2 font-medium">2. Read one page of your website</h3>
+              <p className="mb-3 text-sm text-muted">We read a single page you point us to, once, and only the product or menu details the site publishes for search engines (schema.org data, used by many Shopify, WooCommerce, Squarespace and Wix shops). Pages that only show items as ordinary text can’t be read; use a spreadsheet for those. We follow the site’s robots.txt, never sign in or get past a block, and never invent prices, availability or allergens: anything missing is left empty and flagged. It is a one-time copy, not a live link: your page does not update when the website changes.</p>
+              <label htmlFor="imp-url" className="mb-1 block text-sm font-medium">Page address</label>
+              <input id="imp-url" inputMode="url" autoCapitalize="none" autoCorrect="off" placeholder="https://yourshop.com/collections/bags" value={webUrl} onChange={(e) => setWebUrl(e.target.value)} aria-invalid={webErr ? true : undefined} aria-describedby={webErr ? "imp-url-err" : undefined} className={`${controlClass} bg-surface mb-3`} />
+              <label className="mb-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={webOk} onChange={(e) => setWebOk(e.target.checked)} />I own this website or have permission to reuse its content.</label>
+              {webErr ? <p id="imp-url-err" role="alert" className="mb-3 text-sm text-danger">{webErr}</p> : null}
+              <Button type="submit" disabled={busy !== "" || !webUrl.trim() || !webOk}>{busy === "reading" ? "Reading the page…" : "Read this page"}</Button>
+              <p className="mt-2 text-sm text-muted">Only https addresses are read. Nothing is added to your page until you review it and import.</p>
+            </form>
+          )}
           <p className="mt-4 text-sm text-muted">This page has {p.categories.reduce((n, c) => n + c.items.filter((i) => i.name || i.ref).length, 0)} of {MAX_ITEMS} items, so up to {Math.max(0, MAX_ITEMS - p.categories.reduce((n, c) => n + c.items.filter((i) => i.name || i.ref).length, 0))} more can be added. Your plan reads up to {p.maxRows} rows per file.</p>
-          <p className="mt-2 text-sm text-muted">This release imports from CSV and Excel. Image addresses are noted but pictures are not downloaded; add photos in the editor. Importing from a website is not available yet.</p>
+          <p className="mt-2 text-sm text-muted">This release imports from CSV and Excel. Pictures can be fetched from image addresses after the import, or added in the editor.</p>
           {p.history.length ? <Recent history={p.history} current={p.draftVersionNow} onUndo={undo} busy={busy !== ""} /> : null}
         </div>
       ) : null}
@@ -116,7 +166,7 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
       {step === 1 && parsed && sheet ? (
         <div>
           {parsed.notes.map((n) => <Notice key={n} tone="warning">{n}</Notice>)}
-          <p className="mb-4 text-muted">{parsed.name} · {Math.max(0, sheet.rows.length - headerRow - 1)} rows. Check that each field is read from the right column.</p>
+          <p className="mb-4 break-words text-muted">{source ? "From website: " : ""}{parsed.name} · {Math.max(0, sheet.rows.length - headerRow - 1)} {source ? "items found" : "rows"}. {source ? "Check every price, availability and description against your site before importing; they are copied as published and nothing is filled in for you." : "Check that each field is read from the right column."}</p>
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
             {parsed.sheets.length > 1 ? (
               <div><label htmlFor="imp-sheet" className="mb-1 block text-sm font-medium">Sheet</label>
@@ -202,6 +252,16 @@ export default function ImportWizard(p: { pageId: string; kind: ImportKind; curr
             {done.jobId && !undone ? <Button variant="secondary" disabled={busy !== ""} onClick={() => undo(done.jobId!)}>Undo this import</Button> : null}
             <Button variant="secondary" onClick={() => { setDone(null); setFile(null); setParsed(null); setUndone(false); setMsg(null); key.current = newKey(); go(0); }}>Import another file</Button>
           </div>
+          {done.images?.length && !undone ? (
+            <section className="mt-6 rounded-panel bg-surface p-4" aria-labelledby="pics-h">
+              <h3 id="pics-h" className="mb-1 font-medium">Pictures (optional)</h3>
+              <p className="mb-2 text-sm text-muted">{done.images.length} imported items have a picture address. We can fetch them now, three at a time. Each picture is checked and re-encoded like an upload, counts toward your file storage, and is only added to an item that has no picture yet. Pictures that can’t be fetched are skipped and listed here; you can always add them in the editor.</p>
+              <label className="mb-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={picOk} onChange={(e) => setPicOk(e.target.checked)} />I have the right to use these pictures.</label>
+              <div className="mb-2 flex flex-wrap gap-2"><Button disabled={!picOk || picBusy} onClick={fetchPictures}>{picBusy ? "Fetching…" : Object.keys(pics).length ? "Fetch the rest or retry" : "Fetch pictures"}</Button>{picBusy ? <Button variant="secondary" onClick={() => { picAbort.current = true; }}>Stop</Button> : null}</div>
+              <p role="status" className="text-sm text-muted">{Object.values(pics).filter((x) => x.status === "added").length} added · {Object.values(pics).filter((x) => x.status === "failed").length} could not be fetched · {Object.values(pics).filter((x) => x.status === "skipped").length} skipped</p>
+              {Object.entries(pics).filter(([, v]) => v.status !== "added").length ? <ul className="mt-2 space-y-1 text-sm">{done.images.filter((i) => pics[i.itemId] && pics[i.itemId].status !== "added").map((i) => <li key={i.itemId} className="break-words"><strong>{i.name || "Item"}:</strong> {pics[i.itemId].reason}</li>)}</ul> : null}
+            </section>
+          ) : null}
           <p className="mt-3 text-sm text-muted">Undo works until you edit the draft again. After that, edit by hand or restore a published version.</p>
         </div>
       ) : null}

@@ -30,3 +30,4 @@ Stand-in app: `node tests/stand-ins/server.mjs` (Supabase on :54321, Paystack on
 - `tests/e2e/pages.mjs` (stand-in): hosted card end to end, including staff takedown. `tests/e2e/contact-photo.mjs`: static contact photo, QR stays photo-free, `.vcf` bytes. Both need the stand-in, a build with stand-in env and `OWNER_BOOTSTRAP_EMAIL=boot@example.com`.
 
 - `tests/import-core.ts`, `tests/import-table.ts` (local), `tests/db/import.test.mjs` (Engine), `tests/e2e/import.mjs` (stand-in): spreadsheet import. The e2e test needs `python3` with `openpyxl` to build a sample workbook; restart the app between runs (in-memory rate limits).
+- `tests/safe-fetch.mts` (local, `npx tsx`), `tests/import-web.ts` (local), `tests/e2e/import-web.mjs` and `tests/e2e/import-images.mjs` (stand-in + local fixture site; start the app with `IMPORT_FETCH_TEST_ORIGINS=http://127.0.0.1:54400`; need `CHROMIUM_PATH`, `AXE_PATH`): website and picture import.

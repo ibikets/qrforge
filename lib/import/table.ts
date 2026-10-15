@@ -5,16 +5,16 @@ import { CURRENCIES, DIETARY, DIETARY_LABEL, MENU_STATUSES, STATUSES, STATUS_LAB
 
 /** Spreadsheet rows to menu or catalogue items. Pure (no I/O) so the browser preview and the server use exactly the same code. */
 export type ImportKind = "menu" | "product";
-export type Field = "id" | "ref" | "category" | "name" | "description" | "price" | "currency" | "status" | "tags" | "link" | "imageUrl";
+export type Field = "id" | "ref" | "category" | "name" | "description" | "price" | "currency" | "status" | "tags" | "link" | "imageUrl" | "note";
 export type Mapping = Partial<Record<Field, number>>;
 export type Table = string[][];
 
 export const fieldsFor = (kind: ImportKind): Field[] => (kind === "menu"
-  ? ["ref", "category", "name", "description", "price", "currency", "status", "tags", "imageUrl", "id"]
-  : ["ref", "category", "name", "description", "price", "currency", "status", "link", "imageUrl", "id"]);
+  ? ["ref", "category", "name", "description", "price", "currency", "status", "tags", "imageUrl", "note", "id"]
+  : ["ref", "category", "name", "description", "price", "currency", "status", "link", "imageUrl", "note", "id"]);
 export const FIELD_LABEL = (kind: ImportKind): Record<Field, string> => ({
   id: "Item ID (from an export)", ref: kind === "menu" ? "Item code" : "SKU or item code", category: "Category", name: kind === "menu" ? "Dish name" : "Product name", description: "Description",
-  price: "Price", currency: "Currency", status: "Availability", tags: "Dietary information", link: "Link to more details", imageUrl: "Image address",
+  price: "Price", currency: "Currency", status: "Availability", tags: "Dietary information", link: "Link to more details", imageUrl: "Image address", note: "Notes for review (not imported)",
 });
 const SYN: Record<Field, string[]> = {
   id: ["item id", "itemid", "qrenuvi id"],
@@ -28,6 +28,7 @@ const SYN: Record<Field, string[]> = {
   tags: ["dietary", "dietary information", "diet", "tags", "allergens", "dietary tags"],
   link: ["link", "url", "product link", "product url", "more details", "enquiry link", "page", "website"],
   imageUrl: ["image", "image url", "image address", "photo", "photo url", "picture", "image link"],
+  note: ["notes", "check", "review notes", "flags"],
 };
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -113,6 +114,8 @@ export function interpretRows(rows: Table, headerRow: number, map: Mapping, kind
     if (tg) { if (kind !== "menu") r.warnings.push("Dietary information applies to menus only and was ignored."); else { const t = parseTags(tg); set("tags", t.tags); if (t.unknown.length) r.warnings.push(`Not recognised and left out: ${t.unknown.join(", ")}. Nothing is guessed about allergens.`); } }
     const lk = get("link");
     if (lk) { if (kind !== "product") r.warnings.push("Links apply to catalogues only and were ignored."); else { const c = checkDestination(lk); if (c.ok) set("link", c.url); else r.errors.push(`Link: ${c.error}`); } }
+    const nt = get("note");
+    if (nt) for (const part of nt.split(/(?<=\.)\s+/).slice(0, 6)) if (part.trim()) r.warnings.push(part.trim().slice(0, 200));
     const im = get("imageUrl");
     if (im) { const c = checkDestination(im); if (c.ok && c.url.startsWith("https://")) set("imageUrl", c.url); else r.warnings.push("The image address is not a usable https address and was ignored."); }
     if (r.parsed.ref) { const k = r.parsed.ref.toLowerCase(); if (refs.has(k)) r.errors.push(`The code “${r.parsed.ref}” already appears on row ${refs.get(k)} of this file. Codes must be different.`); else refs.set(k, r.line); }
