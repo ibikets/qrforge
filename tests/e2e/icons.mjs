@@ -29,7 +29,9 @@ await ap.getByRole("heading", { name: "Ada Obi" }).waitFor();
 
 // every action is an icon with an accessible name and a >= 44px target
 const targets = await ap.evaluate(() => [...document.querySelectorAll("article ul li > a[aria-label], article ul li > button[aria-label]")].map((e) => ({ n: e.getAttribute("aria-label"), w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height })));
-ok(targets.length >= 10 && targets.every((t) => t.n && t.w >= 44 && t.h >= 44), `all ${targets.length} icon controls are named and at least 44x44 (${targets.map((t) => Math.round(t.w)).join(",")})`);
+const saveBox = await ap.getByRole("link", { name: "Save contact to your phone" }).boundingBox();
+ok(saveBox && saveBox.height >= 44 && saveBox.width >= 200, "Save contact is a full-width, prominent button");
+ok(targets.length >= 9 && targets.every((t) => t.n && t.w >= 44 && t.h >= 44), `all ${targets.length} icon controls are named and at least 44x44 (${targets.map((t) => Math.round(t.w)).join(",")})`);
 ok(await ap.getByRole("button", { name: "Call: choose from 2" }).isVisible() && await ap.getByRole("button", { name: "Email: choose from 2" }).isVisible() && await ap.getByRole("button", { name: "Website: choose from 2" }).isVisible(), "several numbers / emails / websites -> a chooser, not a dropped entry");
 ok(await ap.getByRole("link", { name: /^WhatsApp:/ }).getAttribute("href") === "https://wa.me/2348031234567", "WhatsApp icon -> wa.me link");
 

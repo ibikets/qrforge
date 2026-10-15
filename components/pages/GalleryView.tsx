@@ -16,11 +16,11 @@ export default function GalleryView({ items, mediaBase, heading }: { items: PubI
   const btn = "inline-flex size-12 items-center justify-center rounded-full bg-white/90 text-ink hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2";
   return (
     <section aria-label={heading || "Images"} className="mb-6">
-      {heading ? <h2 className="mb-2 text-sm font-medium text-muted">{heading}</h2> : null}
+      {heading ? <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--qc-accent)]">{heading}</h2> : null}
       <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0">
         {items.map((it, i) => (
           <li key={it.id}>
-            <button type="button" className="block w-full overflow-hidden rounded-control border border-divider bg-soft p-0 focus-visible:outline-2 focus-visible:outline-offset-2"
+            <button type="button" className="block w-full overflow-hidden rounded-control border border-[var(--qc-line)] bg-soft p-0 focus-visible:outline-2 focus-visible:outline-offset-2"
               aria-label={`Open image ${i + 1} of ${n}: ${it.alt}`} onClick={(e) => { opener.current = e.currentTarget; setAt(i); }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`${mediaBase}/${it.imageId}?size=thumb`} alt={it.alt} width={it.w} height={it.h} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />

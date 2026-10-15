@@ -1,6 +1,9 @@
-import { ACCENTS, initials, type Snapshot } from "@/lib/pages/card";
+import { ACCENTS, type Snapshot } from "@/lib/pages/card";
 import ActionBar from "@/components/pages/ActionBar";
+import CardHeader from "@/components/pages/CardHeader";
+import ContactRows from "@/components/pages/ContactRows";
 import SocialIcons from "@/components/pages/SocialIcons";
+import { cardVars } from "@/components/pages/card-theme";
 
 const LABEL: Record<string, string> = { mobile: "Mobile", work: "Work", home: "Home" };
 
@@ -11,48 +14,18 @@ const LABEL: Record<string, string> = { mobile: "Mobile", work: "Work", home: "H
 export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s: Snapshot; mediaBase: string; vcfHref: string | null; preview?: boolean }) {
   const accent = ACCENTS.find((a) => a.id === s.accent) ?? ACCENTS[0];
   return (
-    <article aria-label={`Digital business card for ${s.name}`} className="mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_0_rgba(0,0,0,.06)]">
-      <header style={{ background: accent.bg, color: accent.fg }} className="px-6 pb-6 pt-8 text-center">
-        {s.portraitId ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={`${mediaBase}/${s.portraitId}`} width={128} height={128} alt={`Photo of ${s.name}`} className="mx-auto mb-4 size-32 rounded-full border-4 border-white/80 bg-white object-cover" />
-        ) : (
-          <div role="img" aria-label={`${s.name}, no photo`} className="mx-auto mb-4 flex size-32 items-center justify-center rounded-full border-4 border-white/80 bg-white/20 text-4xl font-semibold">{initials(s.name)}</div>
-        )}
-        <h1 className="break-words text-[28px] font-semibold leading-tight tracking-[-0.5px]">{s.name}</h1>
-        {s.role || s.company ? <p className="mt-1 break-words text-base opacity-95">{[s.role, s.company].filter(Boolean).join(" · ")}</p> : null}
-        {s.logoId ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={`${mediaBase}/${s.logoId}`} alt={s.company ? `${s.company} logo` : "Company logo"} className="mx-auto mt-4 max-h-12 w-auto max-w-[60%] rounded-control bg-white p-1.5" />
-        ) : null}
-      </header>
-      <div className="px-6 py-6">
-        {s.intro ? <p className="mb-6 whitespace-pre-line break-words text-base">{s.intro}</p> : null}
+    <article aria-label={`Digital business card for ${s.name}`} style={cardVars(accent)} className="qcard mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_3px_rgba(0,0,0,.08)]">
+      <CardHeader name={s.name} line={[s.role, s.company].filter(Boolean).join(" · ")} accentFg={accent.fg}
+        portraitSrc={s.portraitId ? `${mediaBase}/${s.portraitId}` : null} logoSrc={s.logoId ? `${mediaBase}/${s.logoId}` : null} logoAlt={s.company ? `${s.company} logo` : "Company logo"} />
+      <div className="relative -mt-5 rounded-t-[20px] bg-surface px-5 pb-6 pt-6">
+        {s.intro ? <p className="mb-5 whitespace-pre-line break-words text-base leading-relaxed text-ink">{s.intro}</p> : null}
         <ActionBar title={`${s.name} on Qrenuvi`} phones={s.phones} emails={s.emails} websites={s.websites} vcfHref={vcfHref} preview={preview} />
-        {([
-          ["Phone", s.phones.map((p) => ({ id: p.id, label: LABEL[p.label] ?? "", text: p.text, href: p.href }))],
-          ["Email", s.emails.map((p) => ({ id: p.id, label: p.label === "home" ? "Personal" : "Work", text: p.text, href: p.href }))],
-          ["Websites", s.websites.map((p) => ({ id: p.id, label: "", text: p.text, href: p.href }))],
-        ] as const).map(([title, rows]) =>
-          rows.length ? (
-            <section key={title} aria-label={title} className="mb-4">
-              <h2 className="mb-1 text-sm font-medium text-muted">{title}</h2>
-              <ul className="m-0 list-none divide-y divide-divider p-0">
-                {rows.filter((r) => typeof r.href === "string" && typeof r.text === "string").map((r) => (
-                  <li key={r.id}>
-                    <a href={r.href} {...(/^https?:\/\//i.test(r.href) ? { rel: "noopener noreferrer", target: "_blank" } : {})} className="flex min-h-12 flex-wrap items-center gap-x-2 break-all py-2 text-brand">
-                      {r.label ? <span className="text-sm capitalize text-muted">{r.label}</span> : null}
-                      <span>{r.text}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null
-        )}
+        <ContactRows title="Phone" kind="phone" rows={s.phones.map((p) => ({ id: p.id, label: LABEL[p.label] ?? "", text: p.text, href: p.href }))} />
+        <ContactRows title="Email" kind="email" rows={s.emails.map((p) => ({ id: p.id, label: p.label === "home" ? "Personal" : "Work", text: p.text, href: p.href }))} />
+        <ContactRows title="Websites" kind="website" rows={s.websites.map((p) => ({ id: p.id, label: "", text: p.text, href: p.href }))} />
         <SocialIcons items={s.socials} />
       </div>
-      {preview ? <p className="bg-warning-bg px-6 py-3 text-center text-sm text-warning">Preview of your saved draft. Only you can see this.</p> : null}
+      {preview ? <p className="bg-warning-bg px-5 py-2 text-center text-xs text-warning">Preview of your saved draft. Only you can see this.</p> : null}
     </article>
   );
 }

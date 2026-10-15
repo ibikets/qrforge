@@ -149,3 +149,14 @@ Additional load: image uploads (CPU for `sharp`, up to 5 MB per request), privat
 **Proposed allocations (no price or entitlement change).** Pro 25 MB and Business 100 MB unchanged. A 10 MB PDF and 5 MB images fit; typical re-encoded gallery images are well under 1 MB. Storage cost scales with Supabase plan limits; verify the current provider limit before any paid upgrade.
 
 **Not done / manual.** Staff usage view shows page kind only (per-account file count/bytes not yet in the admin list). Physical-phone viewing of downloads, screen-reader testing and signed-in production checks are manual.
+
+## Digital card visual refresh (Oct 2026)
+
+Scoped, presentation-only change to published cards and their editor preview (and, through the same components, business and other section pages). No change to billing, authentication, contact-file logic, payloads or other screens.
+
+- One set of components serves preview and published view: `CardHeader`, `ContactRows`, `ActionBar`, `SocialIcons`, theme in `card-theme.ts`. Colours come from CSS variables set on the card's own `<article class="qcard">` from the customer's chosen accent, so nothing leaks to the dashboard.
+- Header: accent gradient, ringed portrait, tighter type, logo chip; body overlaps the header with a rounded top edge.
+- Call follows the card accent; WhatsApp, Email, Website and Share have fixed restrained tint/glyph pairs. Social icons use platform identities (Instagram gradient, LinkedIn blue, YouTube red, Facebook blue, X/TikTok/GitHub black) in a wrapping, centred row.
+- Save contact is a full-width accent button on published cards. In the editor it is a dashed, grey, non-interactive control with a short note; it is never a link there.
+- Contact rows: tinted icon chip, small label, value; 56px rows; section headings use the accent.
+- Evidence: Playwright at 320/390/1280 (long names, no photo, several numbers/emails, four accents), axe wcag2a/aa/21aa clean at 390, every link and button at least 44x44, keyboard Tab reaches Call, Save contact and social links. Screenshots in `docs/card-look/`. Not done: physical-device viewing and a screen-reader pass.
