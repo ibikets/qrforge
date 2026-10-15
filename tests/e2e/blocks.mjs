@@ -1,5 +1,5 @@
 // Business / multi-link / social pages end to end in a real browser against the built app + local stand-ins (NOT real Supabase).
-import { open, ctl, BASE, sub } from "./lib.mjs";
+import { open, ctl, BASE, sub, actionHref } from "./lib.mjs";
 let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
 await ctl({ reset: true });
 await ctl({ push: { subscriptions: [sub("pro", 20)] } });
@@ -44,7 +44,7 @@ ok((await page.locator("[aria-invalid=true]").count()) >= 1, "bad email flagged 
 await page.getByLabel("Email address 1", { exact: true }).fill("hello@acme.ng");
 // preview shows finished input only
 const prev = page.getByRole("complementary", { name: "Live preview" });
-ok(await prev.getByText("Acme Ltd").first().isVisible() && await prev.getByRole("link", { name: "Call" }).isVisible() && await prev.getByRole("link", { name: "Get directions" }).isVisible(), "preview shows name, Call and directions");
+ok(await prev.getByText("Acme Ltd").first().isVisible() && await prev.getByRole("link", { name: /^Call:/ }).isVisible() && await prev.getByRole("link", { name: "Get directions" }).isVisible(), "preview shows name, Call and directions");
 ok(!(await prev.getByText("0801").count()), "preview omits the private number");
 // hours
 await page.getByLabel("Monday opens").fill("08:30");
@@ -72,8 +72,8 @@ const pid = pubUrl.split("/p/")[1];
 const anon = await (await browser.newContext({ viewport: { width: 390, height: 900 } })).newPage();
 await anon.goto(`${BASE}/p/${pid}`, { waitUntil: "networkidle" });
 ok(await anon.getByRole("heading", { name: "Acme Ltd", level: 1 }).isVisible(), "public: name");
-ok(await anon.getByRole("link", { name: "Call" }).getAttribute("href") === "tel:+2348031234567", "public: Call link");
-ok(await anon.getByRole("link", { name: "WhatsApp" }).getAttribute("href") === "https://wa.me/2348031234567", "public: WhatsApp link");
+ok(await actionHref(anon, "Call") === "tel:+2348031234567", "public: Call link");
+ok(await actionHref(anon, "WhatsApp") === "https://wa.me/2348031234567", "public: WhatsApp link");
 ok((await anon.getByRole("link", { name: "Get directions" }).getAttribute("href")).startsWith("https://www.google.com/maps/search/?api=1&query="), "public: directions link");
 ok(!(await anon.content()).includes("801 000"), "public: private number absent from the page");
 ok(await anon.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "public @390: no horizontal scroll");

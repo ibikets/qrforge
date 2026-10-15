@@ -1,7 +1,7 @@
 import { ACCENTS, initials, type Snapshot } from "@/lib/pages/card";
-import ShareButton from "@/components/pages/ShareButton";
+import ActionBar from "@/components/pages/ActionBar";
+import SocialIcons from "@/components/pages/SocialIcons";
 
-const act = "inline-flex min-h-12 items-center justify-center rounded-control border border-black/15 bg-white px-4 py-3 text-base font-medium text-ink no-underline hover:bg-soft";
 const LABEL: Record<string, string> = { mobile: "Mobile", work: "Work", home: "Home" };
 
 /**
@@ -10,8 +10,6 @@ const LABEL: Record<string, string> = { mobile: "Mobile", work: "Work", home: "H
  */
 export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s: Snapshot; mediaBase: string; vcfHref: string | null; preview?: boolean }) {
   const accent = ACCENTS.find((a) => a.id === s.accent) ?? ACCENTS[0];
-  const phone = s.phones[0], wa = s.phones.find((p) => p.whatsapp), mail = s.emails[0], site = s.websites[0];
-  const safeWeb = typeof site?.href === "string" && /^https?:\/\//i.test(site.href) ? site.href : null;
   return (
     <article aria-label={`Digital business card for ${s.name}`} className="mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_0_rgba(0,0,0,.06)]">
       <header style={{ background: accent.bg, color: accent.fg }} className="px-6 pb-6 pt-8 text-center">
@@ -30,23 +28,11 @@ export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s
       </header>
       <div className="px-6 py-6">
         {s.intro ? <p className="mb-6 whitespace-pre-line break-words text-base">{s.intro}</p> : null}
-        <div className="mb-6 grid grid-cols-2 gap-2">
-          {phone ? <a className={act} href={phone.href}>Call</a> : null}
-          {wa?.whatsapp ? <a className={act} href={wa.whatsapp} rel="noopener noreferrer" target="_blank">WhatsApp</a> : null}
-          {mail ? <a className={act} href={mail.href}>Email</a> : null}
-          {safeWeb ? <a className={act} href={safeWeb} rel="noopener noreferrer" target="_blank">Website</a> : null}
-          <ShareButton title={`${s.name} on Qrenuvi`} className={act} />
-          {vcfHref ? (
-            <a className={`${act} !border-transparent !bg-brand !text-white hover:!bg-brand-hover`} href={vcfHref} download={`${s.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "contact"}.vcf`}>Save contact</a>
-          ) : (
-            <span className={`${act} opacity-60`} aria-disabled="true">Save contact (preview)</span>
-          )}
-        </div>
+        <ActionBar title={`${s.name} on Qrenuvi`} phones={s.phones} emails={s.emails} websites={s.websites} vcfHref={vcfHref} preview={preview} />
         {([
           ["Phone", s.phones.map((p) => ({ id: p.id, label: LABEL[p.label] ?? "", text: p.text, href: p.href }))],
           ["Email", s.emails.map((p) => ({ id: p.id, label: p.label === "home" ? "Personal" : "Work", text: p.text, href: p.href }))],
           ["Websites", s.websites.map((p) => ({ id: p.id, label: "", text: p.text, href: p.href }))],
-          ["Social", s.socials.map((p) => ({ id: p.id, label: p.label, text: p.text, href: p.href }))],
         ] as const).map(([title, rows]) =>
           rows.length ? (
             <section key={title} aria-label={title} className="mb-4">
@@ -64,6 +50,7 @@ export default function CardView({ s, mediaBase, vcfHref, preview = false }: { s
             </section>
           ) : null
         )}
+        <SocialIcons items={s.socials} />
       </div>
       {preview ? <p className="bg-warning-bg px-6 py-3 text-center text-sm text-warning">Preview of your saved draft. Only you can see this.</p> : null}
     </article>

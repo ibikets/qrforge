@@ -34,3 +34,14 @@ export async function staffSession(id, email, { aal = "aal2", lastSignIn = Date.
   const session = { access_token: jwt, refresh_token: "r", expires_in: 3600, expires_at: exp, token_type: "bearer", user };
   return STAFF_COOKIE + "=base64-" + b64u(JSON.stringify(session));
 }
+
+/** href of a contact action in the icon bar: a direct link when there is one entry, else open the chooser and take entry `index`. */
+export async function actionHref(scope, name, index = 0) {
+  const link = scope.getByRole("link", { name: new RegExp("^" + name + ":") });
+  if (await link.count()) return link.first().getAttribute("href");
+  const btn = scope.getByRole("button", { name: new RegExp("^" + name + ": choose") });
+  await btn.click();
+  const href = await scope.getByRole("group", { name: name + " options" }).getByRole("link").nth(index).getAttribute("href");
+  await btn.click();
+  return href;
+}

@@ -1,4 +1,5 @@
-import ShareButton from "@/components/pages/ShareButton";
+import ActionBar from "@/components/pages/ActionBar";
+import SocialIcons from "@/components/pages/SocialIcons";
 import { ACCENTS, initials } from "@/lib/pages/card";
 import { DAY_NAMES, type PageSnapshot, type PubBlock, type PubRow } from "@/lib/pages/blocks";
 
@@ -30,12 +31,6 @@ function Section({ b }: { b: PubBlock }) {
     case "actions":
       return (
         <section aria-label="Contact" className="mb-6">
-          <div className="mb-3 grid grid-cols-2 gap-2">
-            {b.phones[0] && web(b.phones[0].href) ? <a className={act} href={b.phones[0].href}>Call</a> : null}
-            {b.phones.find((p) => p.whatsapp)?.whatsapp ? <a className={act} href={b.phones.find((p) => p.whatsapp)!.whatsapp!} rel="noopener noreferrer" target="_blank">WhatsApp</a> : null}
-            {b.emails[0] && web(b.emails[0].href) ? <a className={act} href={b.emails[0].href}>Email</a> : null}
-            {b.websites[0] && web(b.websites[0].href) ? <a className={act} href={b.websites[0].href} rel="noopener noreferrer" target="_blank">Website</a> : null}
-          </div>
           <Rows title="Phone numbers" rows={b.phones} /><Rows title="Email addresses" rows={b.emails} /><Rows title="Websites" rows={b.websites} />
         </section>
       );
@@ -56,7 +51,7 @@ function Section({ b }: { b: PubBlock }) {
         </section>
       );
     case "socials":
-      return <section className="mb-6">{b.heading ? <h2 className="mb-1 text-sm font-medium text-muted">{b.heading}</h2> : <h2 className="mb-1 text-sm font-medium text-muted">Social</h2>}<Rows title="Social profiles" rows={b.items} /></section>;
+      return <SocialIcons items={b.items} heading={b.heading} />;
     case "hours":
       return (
         <section aria-label="Opening hours" className="mb-6">
@@ -93,6 +88,8 @@ export default function BlocksView({ s, mediaBase, vcfHref, preview = false }: {
   const head = s.blocks.find((b) => b.type === "header");
   if (head?.type !== "header") return null;
   const name = head.name || (preview ? "Your name" : "");
+  const a = s.blocks.find((b) => b.type === "actions");
+  const acts = a?.type === "actions" ? a : null;
   return (
     <article aria-label={`Page for ${name}`} className="mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_0_rgba(0,0,0,.06)]">
       <header style={{ background: accent.bg, color: accent.fg }} className="px-6 pb-6 pt-8 text-center">
@@ -110,11 +107,8 @@ export default function BlocksView({ s, mediaBase, vcfHref, preview = false }: {
         {head.tagline ? <p className="mt-1 break-words text-base opacity-95">{head.tagline}</p> : null}
       </header>
       <div className="px-6 py-6">
+        <ActionBar title={`${name} on Qrenuvi`} phones={acts?.phones ?? []} emails={acts?.emails ?? []} websites={acts?.websites ?? []} vcfHref={vcfHref} preview={preview} showSave={s.kind === "business"} />
         {s.blocks.filter((b) => b.type !== "header").map((b) => <Section key={b.id} b={b} />)}
-        <div className="grid grid-cols-2 gap-2">
-          <ShareButton title={`${name} on Qrenuvi`} className={act} />
-          {vcfHref ? <a className={`${act}`} href={vcfHref} download>Save contact</a> : preview && s.kind === "business" ? <span className={`${act} opacity-60`} aria-disabled="true">Save contact (preview)</span> : null}
-        </div>
       </div>
       {preview ? <p className="bg-warning-bg px-6 py-3 text-center text-sm text-warning">Preview of your saved draft. Only you can see this.</p> : null}
     </article>

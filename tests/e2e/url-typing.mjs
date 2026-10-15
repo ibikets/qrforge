@@ -1,6 +1,6 @@
 // Website / social fields in the hosted card editor (and the static contact editor): typing and pasting must never crash,
 // invalid input is explained inline, nothing the person typed is lost, and only finished, safe links reach the preview, the public page and the contact file.
-import { open, ctl, BASE, sub } from "./lib.mjs";
+import { open, ctl, BASE, sub, actionHref } from "./lib.mjs";
 let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
 await ctl({ reset: true }); await ctl({ push: { subscriptions: [sub("pro", 20)] } });
 const { browser, page, logs } = await open({ width: 1440, height: 1100, signedIn: true });
@@ -16,7 +16,7 @@ await page.getByLabel("Job title").fill("Head of Product");
 await page.getByLabel("Phone number 1", { exact: true }).fill("0803 123 4567");
 const preview = page.getByRole("complementary", { name: "Live preview" });
 const site = page.getByLabel("Website 1", { exact: true });
-const webLink = preview.getByRole("link", { name: "Website", exact: true });
+const webLink = preview.getByRole("link", { name: /^Website:/ });
 
 // 1. character by character, including every awkward intermediate value
 await site.click();
@@ -92,7 +92,7 @@ const vals = async () => ({ w1: await page.getByLabel("Website 1", { exact: true
 const v = await vals();
 ok(v.w1 === "example.com" && v.w2 === "blog.example.net" && v.s1 === "https://example.social/ada" && v.s2 === "@ada.obi", "after reload the saved rows come back exactly as entered");
 ok((await page.getByLabel("Website 3", { exact: true }).count()) === 0, "the removed row stays removed");
-ok(await preview.getByRole("link", { name: "Website", exact: true }).getAttribute("href") === "https://example.com/", "preview after reload uses the first valid website");
+ok(await actionHref(preview, "Website") === "https://example.com/", "preview after reload uses the first valid website");
 
 // 6. publish; a signed-out visitor sees only finished, safe links; the contact file carries the same
 await page.getByRole("button", { name: "Publish", exact: true }).click();
@@ -105,7 +105,7 @@ await ap.goto(`${BASE}/p/${publicId}`, { waitUntil: "load" });
 await ap.getByRole("heading", { name: "Ada Obi" }).waitFor();
 const hrefs = await ap.locator("section[aria-label='Websites'] a").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
 ok(JSON.stringify(hrefs) === JSON.stringify(["https://example.com/", "https://blog.example.net/"]), `public page lists the two websites as https links ${JSON.stringify(hrefs)}`);
-ok(await ap.locator("section[aria-label='Social'] a").evaluateAll((a) => a.map((x) => x.getAttribute("href"))).then((h) => h.includes("https://example.social/ada") && h.includes("https://instagram.com/ada.obi") || h.some((x) => /instagram\.com\/ada\.obi/.test(x))), "public page lists both social links");
+ok(await ap.locator("section[aria-label='Social profiles'] a").evaluateAll((a) => a.map((x) => x.getAttribute("href"))).then((h) => h.includes("https://example.social/ada") && h.includes("https://instagram.com/ada.obi") || h.some((x) => /instagram\.com\/ada\.obi/.test(x))), "public page lists both social links");
 const vcf = await (await anon.request.get(`${BASE}/p/${publicId}/contact.vcf`)).text();
 ok(vcf.includes("URL:https://example.com/") && vcf.includes("URL:https://blog.example.net/") && !/URL:.*(javascript|data:)/i.test(vcf), "the downloaded contact file has the same published websites");
 

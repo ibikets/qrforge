@@ -2,7 +2,7 @@
 // Real here: the app code, the image pipeline (sharp), the vCard/QR bytes, the browser. Stand-in: PostgREST/Storage/auth.
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import { open, ctl, BASE, SP, UID, sub, staffSession } from "./lib.mjs";
+import { open, ctl, BASE, SP, UID, sub, staffSession, actionHref } from "./lib.mjs";
 const req = createRequire(process.env.REPO_PKG ?? "/home/claude/qrforge/package.json");
 const sharp = req("sharp"); const jsQR = req("jsqr");
 const axeSrc = fs.readFileSync(process.env.AXE_PATH ?? "node_modules/axe-core/axe.min.js", "utf8");
@@ -145,12 +145,12 @@ ok(!html.includes("<b>not bold</b>") && html.includes("&lt;b&gt;not bold&lt;/b&g
 const img = ap.getByRole("img", { name: "Photo of Ada Obi" });
 ok(await img.evaluate((i) => i.complete && i.naturalWidth > 0), "portrait displays reliably for an anonymous visitor");
 ok(await ap.getByRole("img", { name: "Acme; Ltd, Nigeria logo" }).evaluate((i) => i.complete && i.naturalWidth > 0), "logo displays");
-ok((await ap.getByRole("link", { name: "Call" }).getAttribute("href")) === "tel:08031234567", "Call -> tel:");
-ok((await ap.getByRole("link", { name: "WhatsApp" }).getAttribute("href")) === "https://wa.me/2348020001111", "WhatsApp -> wa.me with international number");
-ok((await ap.getByRole("link", { name: "Email", exact: true }).getAttribute("href")) === "mailto:ada@example.com", "Email -> mailto:");
-ok((await ap.getByRole("link", { name: "Website" }).getAttribute("href")) === "https://acme.example/", "Website -> https");
-ok(await ap.getByRole("button", { name: "Share" }).isVisible(), "Share present");
-ok(await ap.getByRole("link", { name: "Save contact" }).isVisible(), "Save contact present");
+ok((await actionHref(ap, "Call")) === "tel:08031234567", "Call -> tel:");
+ok((await actionHref(ap, "WhatsApp")) === "https://wa.me/2348020001111", "WhatsApp -> wa.me with international number");
+ok((await actionHref(ap, "Email")) === "mailto:ada@example.com", "Email -> mailto:");
+ok((await actionHref(ap, "Website")) === "https://acme.example/", "Website -> https");
+ok(await ap.getByRole("button", { name: "Share this page" }).isVisible(), "Share present");
+ok(await ap.getByRole("link", { name: "Save contact to your phone" }).isVisible(), "Save contact present");
 ok(await ap.locator("nav, header a[href='/login']").count() === 0 || !(await ap.getByRole("link", { name: "Sign in" }).count()), "no Qrenuvi account navigation on recipient page");
 ok((await ap.locator("body").evaluate((b) => b.scrollWidth <= innerWidth)), "no horizontal scroll at 390px");
 ok((await ap.locator('meta[name=robots]').getAttribute("content")).includes("noindex"), "recipient page is noindex");
@@ -165,7 +165,7 @@ ok((await anon.request.get(`${BASE}/p/${publicId}/media/00000000-0000-4000-8000-
 // ---------- contact file ----------
 const vcfRes = await anon.request.get(`${BASE}/p/${publicId}/contact.vcf`);
 const vbuf = await vcfRes.body(); const vtxt = vbuf.toString("latin1");
-ok(vcfRes.headers()["content-type"].startsWith("text/vcard") && /attachment; filename="Ada-Obi\.vcf"/.test(vcfRes.headers()["content-disposition"]), "contact file headers");
+ok(vcfRes.headers()["content-type"].startsWith("text/vcard") && /inline; filename="Ada-Obi\.vcf"/.test(vcfRes.headers()["content-disposition"]), "contact file headers");
 ok(vtxt.startsWith("BEGIN:VCARD\r\nVERSION:3.0\r\n") && vtxt.endsWith("END:VCARD\r\n"), "vCard 3.0, CRLF line endings");
 const lines = vtxt.split("\r\n");
 ok(lines.every((l) => Buffer.byteLength(l, "latin1") <= 75), "every line folded to 75 octets or fewer");
@@ -333,7 +333,7 @@ for (const w of [390, 320]) {
 // keyboard-only: tab order reaches Save contact
 await ap.setViewportSize({ width: 390, height: 800 });
 await ap.goto(`${BASE}/p/${publicId}?k=1`, { waitUntil: "networkidle" });
-let reached = false; for (let i = 0; i < 20 && !reached; i++) { await ap.keyboard.press("Tab"); reached = await ap.evaluate(() => document.activeElement?.textContent === "Save contact"); }
+let reached = false; for (let i = 0; i < 20 && !reached; i++) { await ap.keyboard.press("Tab"); reached = await ap.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Save contact to your phone"); }
 ok(reached, "keyboard Tab reaches Save contact on the card");
 ok(logs.filter((l) => !/favicon|404|401|403|422|413|409|400/.test(l)).length === 0 && alogs.filter((l) => !/404|401|403/.test(l)).length === 0, "no unexpected console errors " + JSON.stringify([...logs, ...alogs].slice(0, 4)));
 await browser.close();

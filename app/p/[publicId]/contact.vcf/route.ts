@@ -17,7 +17,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
     const head = page?.blocks.find((b) => b.type === "header");
     if (body && head?.type === "header") {
       const nm = head.name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "contact";
-      return new Response(body, { headers: { "Content-Type": "text/vcard; charset=utf-8", "Content-Disposition": `attachment; filename="${nm}.vcf"`, "Cache-Control": "public, max-age=300, s-maxage=300", "X-Content-Type-Options": "nosniff" } });
+      return new Response(body, { headers: { "Content-Type": "text/vcard; charset=utf-8", "Content-Disposition": `inline; filename="${nm}.vcf"`, "Cache-Control": "public, max-age=300, s-maxage=300", "X-Content-Type-Options": "nosniff" } });
     }
     return new Response("This page isn’t available.", { status: 404, headers: { "Cache-Control": "no-store" } });
   }
@@ -29,5 +29,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
     if (m?.vcf_path) { const f = await adm().storage.from(PAGE_BUCKET).download(m.vcf_path); if (!f.error && f.data) photo = new Uint8Array(await f.data.arrayBuffer()); }
   }
   const safe = snap.name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "contact";
-  return new Response(buildVcf(snap, photo), { headers: { "Content-Type": "text/vcard; charset=utf-8", "Content-Disposition": `attachment; filename="${safe}.vcf"`, "Cache-Control": "public, max-age=300, s-maxage=300", "X-Content-Type-Options": "nosniff" } });
+  return new Response(buildVcf(snap, photo), { headers: { "Content-Type": "text/vcard; charset=utf-8", "Content-Disposition": `inline; filename="${safe}.vcf"`, "Cache-Control": "public, max-age=300, s-maxage=300", "X-Content-Type-Options": "nosniff" } });
 }
