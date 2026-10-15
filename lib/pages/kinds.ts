@@ -57,7 +57,7 @@ function blocksEngine(kind: BlockKind): Engine {
     withoutMissing: (c, have) => withoutMissingMedia(c as PageContent, have),
     withFacts: (c, by) => withStoredFacts(c as PageContent, by),
     uploads: [...(KIND_INFO[kind].portrait ? ["portrait" as const] : []), ...(KIND_INFO[kind].logo ? ["logo" as const] : []),
-      ...(KIND_INFO[kind].cover || KIND_INFO[kind].allow.includes("gallery") ? ["image" as const] : []),
+      ...(KIND_INFO[kind].cover || KIND_INFO[kind].allow.includes("gallery") || KIND_INFO[kind].allow.includes("items") ? ["image" as const] : []),
       ...(KIND_INFO[kind].allow.includes("file") || KIND_INFO[kind].allow.includes("documents") ? ["file" as const] : [])],
   };
 }
@@ -87,6 +87,10 @@ function fromPageSnapshot(kind: BlockKind, s: PageSnapshot): PageContent {
       case "documents": return { ...base, type: "documents", heading: b.heading, items: b.items.map((i) => ({ id: i.id, title: i.title, description: i.description, fileId: i.fileId, url: i.href ?? "", meta: i.meta })) };
       case "gallery": return { ...base, type: "gallery", heading: b.heading, items: b.items.map((i) => ({ id: i.id, imageId: i.imageId, caption: i.caption, alt: i.alt, meta: { w: i.w, h: i.h } })) };
       case "entries": return { ...base, type: "entries", heading: b.heading, items: b.items };
+      case "items": return { ...base, type: "items", heading: b.heading, currency: b.currency, categories: b.categories.map((cat) => ({ id: cat.id, name: cat.name,
+        items: cat.items.map((i) => ({ id: i.id, name: i.name, description: i.description, price: i.price === null ? "" : String(i.price), imageId: i.imageId, meta: i.imageId && i.w && i.h ? { w: i.w, h: i.h } : null, status: i.status, tags: i.tags })) })) };
+      case "event": return { ...base, type: "event", startsAt: b.startsAt, endsAt: b.endsAt, timezone: b.timezone, online: b.online };
+      case "offer": return { ...base, type: "offer", title: b.title, code: b.code, description: b.description, validFrom: b.validFrom, validUntil: b.validUntil, timezone: b.timezone, conditions: b.conditions };
     }
   });
   return normaliseContent(kind, { v: 2, kind, accent: s.accent, blocks: blocks.map((b) => ({ ...b, id: b.id || newBlockId() })) });

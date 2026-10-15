@@ -18,6 +18,7 @@ These run against local stand-ins, never real services. They are evidence of beh
 | `tests/site-origin.ts`, `tests/content-image.ts` | preview-safe callback origin; hero image validation | `npx tsx` |
 | `tests/contact.ts` | repeatable contact fields: helpers, validation, vCard encoding, QR round trip (optional `VCARD_OUT` to feed an independent parser) | `npx tsx` |
 | `tests/e2e/contact-rows.mjs` | contact form rows in a browser: + / remove, focus, errors, drafts, save/reload/edit, PNG decode, staff view | same + `sharp`, `jsqr` resolvable from the repo |
+| `tests/pages-phase5.ts`, `tests/e2e/phase5.mjs` | Phase 5 sections and pages (menu, catalogue, product pages, event, offers, campaign, chooser) | `npx tsx`; stand-ins + built app (restart the app between suites to reset rate limits) |
 | `tests/qr/*` | decode matrix over real exports with jsQR and ZXing, distortion tests, dot-radius experiments | `npm i --no-save zxing-wasm jsqr`; see header comments |
 
 Stand-in app: `node tests/stand-ins/server.mjs` (Supabase on :54321, Paystack on :54322), then build and start with

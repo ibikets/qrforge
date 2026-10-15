@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import BlocksView from "@/components/pages/BlocksView";
 import LogoField from "@/components/pages/LogoField";
 import PhotoField from "@/components/pages/PhotoField";
+import ItemsEditor from "@/components/pages/ItemsEditor";
 import PreviewBoundary from "@/components/pages/PreviewBoundary";
 import UploadField from "@/components/pages/UploadField";
 import { Button } from "@/components/ui/Button";
@@ -25,7 +26,7 @@ type Props = {
   publicUrl: string; revisions: Rev[]; canEdit: boolean; takenDown: boolean; qrSvg: string;
 };
 const LIFE: Record<string, string> = { draft: "Draft, not published", published: "Published", unpublished: "Unpublished", archived: "Archived" };
-const NAMES: Record<Exclude<BlockType, "header">, string> = { text: "Text", actions: "Contact buttons", links: "Link list", socials: "Social profiles", hours: "Opening hours", location: "Location", button: "Button", file: "Document or slides", documents: "Documents", gallery: "Images", entries: "Experience or education" };
+const NAMES: Record<Exclude<BlockType, "header">, string> = { text: "Text", actions: "Contact buttons", links: "Link list", socials: "Social profiles", hours: "Opening hours", location: "Location", button: "Button", file: "Document or slides", documents: "Documents", gallery: "Images", entries: "Experience or education", items: "Menu or products", event: "Event details", offer: "Offer" };
 const ROWS: Record<RowGroup, { title: string; singular: string; placeholder: string; inputMode: "tel" | "email" | "url" | "text"; labels: { id: string; label: string }[] }> = {
   phones: { title: "Phone numbers", singular: "phone number", placeholder: "+234 800 000 0000", inputMode: "tel", labels: GROUPS.phone.types },
   emails: { title: "Email addresses", singular: "email address", placeholder: "name@example.com", inputMode: "email", labels: GROUPS.email.types },
@@ -314,6 +315,59 @@ export default function BlocksEditor(p: Props) {
           <Button id={`${b.id}-add-ent`} variant="secondary" disabled={b.items.length >= MAX_ENTRIES} onClick={() => { patch(b.id, { items: [...b.items, { id: newRowId(), title: "", org: "", period: "", summary: "" }] }); focusSoon(`${b.id}-ent-${b.items.length}`); }}>Add entry</Button>
           {b.items.length >= MAX_ENTRIES ? <p className="mt-1 text-[13px] text-muted">You can add up to {MAX_ENTRIES}.</p> : null}
         </>;
+      case "items":
+        return <ItemsEditor b={b} kind={content.kind === "menu" ? "menu" : "product"} pageId={p.id} ro={ro} errors={errors} clearErr={clearErr} focusSoon={focusSoon} patch={(c) => patch(b.id, c as Partial<Block>)} />;
+      case "event": {
+        const f = (x: string) => `${b.id}.${x}`;
+        const tzBad = errors[f("timezone")] || (touched.has(f("tz")) && !validTimeZone(b.timezone));
+        return <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="mb-3">
+              <label htmlFor={f("start")} className="mb-2 block text-sm font-medium">Starts</label>
+              <input id={f("start")} type="datetime-local" className={controlClass} value={b.startsAt} aria-invalid={errors[f("startsAt")] ? true : undefined} onChange={(e) => patch(b.id, { startsAt: e.target.value }, f("startsAt"))} />
+              {errors[f("startsAt")] ? <p role="alert" className="mt-1 text-[13px] text-danger">{errors[f("startsAt")]}</p> : null}
+            </div>
+            <div className="mb-3">
+              <label htmlFor={f("end")} className="mb-2 block text-sm font-medium">Ends (optional)</label>
+              <input id={f("end")} type="datetime-local" className={controlClass} value={b.endsAt} aria-invalid={errors[f("endsAt")] ? true : undefined} onChange={(e) => patch(b.id, { endsAt: e.target.value }, f("endsAt"))} />
+              {errors[f("endsAt")] ? <p role="alert" className="mt-1 text-[13px] text-danger">{errors[f("endsAt")]}</p> : null}
+            </div>
+          </div>
+          <div className="mb-3">
+            <label htmlFor={f("tz")} className="mb-2 block text-sm font-medium">Time zone</label>
+            <input id={f("tz")} list="tz-list" className={controlClass} value={b.timezone} aria-invalid={tzBad ? true : undefined} onBlur={() => touch(f("tz"))} onChange={(e) => patch(b.id, { timezone: e.target.value }, f("timezone"))} />
+            {tzBad ? <p className="mt-1 text-[13px] text-danger">Choose a valid time zone, for example Africa/Lagos.</p> : <p className="mt-1 text-[13px] text-muted">The date and time are shown exactly as entered, with this zone named, so visitors anywhere read the same thing.</p>}
+          </div>
+          <label className="inline-flex min-h-12 items-center gap-2 text-sm"><input type="checkbox" className="size-5" checked={b.online} onChange={(e) => patch(b.id, { online: e.target.checked })} /> This is an online event (put the join link in a Button section)</label>
+        </>;
+      }
+      case "offer": {
+        const f = (x: string) => `${b.id}.${x}`;
+        const tzBad = errors[f("timezone")] || (touched.has(f("tz")) && !validTimeZone(b.timezone));
+        return <>
+          <TextField id={f("title")} label="Offer title" value={b.title} maxLength={80} error={errors[f("title")]} placeholder="e.g. 10% off all dresses" onChange={(e) => patch(b.id, { title: e.target.value }, f("title"))} />
+          <TextField id={f("code")} label="Code (optional)" value={b.code} maxLength={32} error={errors[f("code")]} help="Shown to visitors with a Copy button. Qrenuvi does not check or apply it." onChange={(e) => patch(b.id, { code: e.target.value }, f("code"))} />
+          <TextArea id={f("desc")} label="Description (optional)" rows={2} value={b.description} maxLength={400} onChange={(e) => patch(b.id, { description: e.target.value })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="mb-3">
+              <label htmlFor={f("from")} className="mb-2 block text-sm font-medium">First day (optional)</label>
+              <input id={f("from")} type="date" className={controlClass} value={b.validFrom} aria-invalid={errors[f("validFrom")] ? true : undefined} onChange={(e) => patch(b.id, { validFrom: e.target.value }, f("validFrom"))} />
+              {errors[f("validFrom")] ? <p role="alert" className="mt-1 text-[13px] text-danger">{errors[f("validFrom")]}</p> : null}
+            </div>
+            <div className="mb-3">
+              <label htmlFor={f("until")} className="mb-2 block text-sm font-medium">Last day (optional)</label>
+              <input id={f("until")} type="date" className={controlClass} value={b.validUntil} aria-invalid={errors[f("validUntil")] ? true : undefined} onChange={(e) => patch(b.id, { validUntil: e.target.value }, f("validUntil"))} />
+              {errors[f("validUntil")] ? <p role="alert" className="mt-1 text-[13px] text-danger">{errors[f("validUntil")]}</p> : null}
+            </div>
+          </div>
+          <div className="mb-3">
+            <label htmlFor={f("tz")} className="mb-2 block text-sm font-medium">Time zone for these dates</label>
+            <input id={f("tz")} list="tz-list" className={controlClass} value={b.timezone} aria-invalid={tzBad ? true : undefined} onBlur={() => touch(f("tz"))} onChange={(e) => patch(b.id, { timezone: e.target.value }, f("timezone"))} />
+            {tzBad ? <p className="mt-1 text-[13px] text-danger">Choose a valid time zone, for example Africa/Lagos.</p> : <p className="mt-1 text-[13px] text-muted">The offer shows as expired after its last day ends in this zone.</p>}
+          </div>
+          <TextArea id={f("cond")} label="Conditions (optional)" rows={3} value={b.conditions} maxLength={600} help="For example: one use per customer, in-store only." onChange={(e) => patch(b.id, { conditions: e.target.value })} />
+        </>;
+      }
       case "actions":
         return <>
           <p className="mb-3 text-[13px] text-muted">The first phone, WhatsApp, email and website become big buttons. Everything listed shows underneath.</p>
@@ -358,7 +412,6 @@ export default function BlocksEditor(p: Props) {
           <div className="mb-4">
             <label htmlFor={`${b.id}-tz`} className="mb-2 block text-sm font-medium">Time zone</label>
             <input id={`${b.id}-tz`} list="tz-list" className={controlClass} value={b.timezone} aria-invalid={errors[`${b.id}.timezone`] || (touched.has(`${b.id}.tz`) && !validTimeZone(b.timezone)) ? true : undefined} onBlur={() => touch(`${b.id}.tz`)} onChange={(e) => patch(b.id, { timezone: e.target.value }, `${b.id}.timezone`)} />
-            <datalist id="tz-list">{(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["Africa/Lagos", "UTC"]).map((z) => <option key={z} value={z} />)}</datalist>
             {errors[`${b.id}.timezone`] || (touched.has(`${b.id}.tz`) && !validTimeZone(b.timezone)) ? <p className="mt-2 text-[13px] text-danger">Choose a valid time zone, for example Africa/Lagos.</p> : <p className="mt-2 text-[13px] text-muted">Hours are shown as written, in this time zone.</p>}
           </div>
           {b.days.map((d, i) => {
@@ -401,8 +454,10 @@ export default function BlocksEditor(p: Props) {
           <span className="font-medium text-ink">{info.label}</span> · <span className="font-medium text-ink">{LIFE[life] ?? life}</span>
           {pubVer ? ` · live version ${pubVer}` : ""}{dirty ? " · unsaved changes" : ""}
         </p>
+        <datalist id="tz-list">{(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["Africa/Lagos", "UTC"]).map((z) => <option key={z} value={z} />)}</datalist>
+        {info.notice ? <Notice tone="info" title="What this page does">{info.notice}</Notice> : null}
         {p.takenDown ? <Notice tone="error" title="This page has been disabled by Qrenuvi" live>It cannot be published. Contact support if you think this is a mistake.</Notice> : null}
-        {!p.canEdit && !p.takenDown ? <Notice tone="warning" title="Editing needs an active Pro or Business plan" live>Your page is kept. {live ? "It stays visible for {GRACE_DAYS} days after your plan ends. " : ""}You can still unpublish or delete it. <a className="text-brand" href="/pricing">See plans</a></Notice> : null}
+        {!p.canEdit && !p.takenDown ? <Notice tone="warning" title="Editing needs an active Pro or Business plan" live>Your page is kept. {live ? `It stays visible for ${GRACE_DAYS} days after your plan ends. ` : ""}You can still unpublish or delete it. <a className="text-brand" href="/pricing">See plans</a></Notice> : null}
         {conflict ? (
           <div role="alertdialog" aria-labelledby="cf-t" className="my-6 rounded-control border border-danger bg-surface p-4">
             <h2 id="cf-t" className="mb-1 text-lg font-medium">This page was changed somewhere else</h2>

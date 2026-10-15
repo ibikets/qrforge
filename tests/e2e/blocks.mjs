@@ -132,7 +132,7 @@ await page.getByText(/Published as version 1/).waitFor();
 ok(true, "social page published");
 
 // ---------- server-side rules ----------
-ok((await apiJson("/api/pages", "POST", { title: "x", kind: "menu" })).status === 422, "unknown kind refused");
+ok((await apiJson("/api/pages", "POST", { title: "x", kind: "bogus" })).status === 422, "unknown kind refused");
 ok((await apiJson("/api/pages", "POST", { title: "x", kind: "__proto__" })).status === 422, "odd kind refused");
 const get = await apiJson(`/api/pages/${bid}`, "PUT", { title: "Acme main", content: { blocks: [{ type: "header", name: "x" }, { type: "hours" }, { type: "evil" }] }, expectedVersion: 99 });
 ok(get.status === 409, "stale save refused");

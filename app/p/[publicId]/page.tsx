@@ -39,7 +39,7 @@ async function Card({ params }: { params: Promise<{ publicId: string }> }) {
   if (r.kind !== "card") {
     const page = readPageSnapshot(r.snapshot);
     if (!page) return <Unavailable />;
-    return <BlocksView s={page} mediaBase={`/p/${publicId}/media`} fileBase={`/p/${publicId}/file`} vcfHref={orgVcf(page) ? `/p/${publicId}/contact.vcf` : null} />;
+    return <BlocksView s={page} mediaBase={`/p/${publicId}/media`} fileBase={`/p/${publicId}/file`} vcfHref={orgVcf(page) ? `/p/${publicId}/contact.vcf` : null} itemBase={`/p/${publicId}/item`} />;
   }
   const snap = readSnapshot(r.snapshot);
   if (!snap) return <Unavailable />;

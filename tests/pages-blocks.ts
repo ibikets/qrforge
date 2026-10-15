@@ -18,8 +18,8 @@ for (const k of ["business", "links", "social"] as const) {
   ok(Object.keys(validateContent(c, false)).length === 0, `${k}: an empty draft saves`);
   ok(Object.keys(validateContent(c, true)).length > 0, `${k}: an empty page cannot be published`);
 }
-ok(isPageKind("business") && isPageKind("card") && !isPageKind("menu") && !isPageKind(null), "page kinds are a closed list");
-ok(engineFor("menu") === null && engineFor("card") !== null && engineFor("links") !== null, "unknown kind has no engine");
+ok(isPageKind("business") && isPageKind("card") && !isPageKind("bogus") && !isPageKind(null), "page kinds are a closed list");
+ok(engineFor("bogus") === null && engineFor("card") !== null && engineFor("links") !== null, "unknown kind has no engine");
 
 // ---- normalisation of hostile input never throws and enforces structure
 const junk: unknown[] = [null, undefined, 5, "x", [], {}, { blocks: "no" }, { blocks: [null, 1, "a", {}, { type: "evil" }] }, { blocks: [{ type: "header", name: { a: 1 } }] }];

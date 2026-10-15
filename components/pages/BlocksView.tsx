@@ -1,6 +1,8 @@
 import { LuDownload, LuExternalLink } from "react-icons/lu";
 import ActionBar from "@/components/pages/ActionBar";
 import GalleryView from "@/components/pages/GalleryView";
+import ItemsView from "@/components/pages/ItemsView";
+import { EventSection, OfferSection } from "@/components/pages/ExtraSections";
 import CardHeader from "@/components/pages/CardHeader";
 import ContactRows from "@/components/pages/ContactRows";
 import SocialIcons from "@/components/pages/SocialIcons";
@@ -37,7 +39,7 @@ function FileAction({ label, fileId, href, host, meta, fileBase, primary = true 
   return null;
 }
 
-function Section({ b, fileBase, mediaBase }: { b: PubBlock; fileBase: string; mediaBase: string }) {
+function Section({ b, fileBase, mediaBase, kind, itemBase }: { b: PubBlock; fileBase: string; mediaBase: string; kind: string; itemBase: string | null }) {
   switch (b.type) {
     case "text":
       return <section className="mb-6">{b.heading ? <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--qc-accent)]">{b.heading}</h2> : null}<p className="whitespace-pre-line break-words text-base">{b.body}</p></section>;
@@ -131,12 +133,15 @@ function Section({ b, fileBase, mediaBase }: { b: PubBlock; fileBase: string; me
           </ul>
         </section>
       );
+    case "items": return kind === "menu" || kind === "product" ? <ItemsView b={b} kind={kind} mediaBase={mediaBase} itemBase={itemBase} /> : null;
+    case "event": return <EventSection b={b} />;
+    case "offer": return <OfferSection b={b} />;
     default: return null;
   }
 }
 
 /** A section-built page as a visitor sees it. Renders only a stored snapshot, as text. */
-export default function BlocksView({ s, mediaBase, fileBase, vcfHref, preview = false }: { s: PageSnapshot; mediaBase: string; fileBase: string; vcfHref: string | null; preview?: boolean }) {
+export default function BlocksView({ s, mediaBase, fileBase, vcfHref, itemBase = null, preview = false }: { s: PageSnapshot; mediaBase: string; fileBase: string; vcfHref: string | null; itemBase?: string | null; preview?: boolean }) {
   const accent = ACCENTS.find((a) => a.id === s.accent) ?? ACCENTS[0];
   const head = s.blocks.find((b) => b.type === "header");
   if (head?.type !== "header") return null;
@@ -153,7 +158,7 @@ export default function BlocksView({ s, mediaBase, fileBase, vcfHref, preview = 
         logoSrc={head.logoId ? `${mediaBase}/${head.logoId}` : null} logoAlt={`${name} logo`} />
       <div className="relative -mt-5 rounded-t-[20px] bg-surface px-5 pb-6 pt-6">
         <ActionBar title={`${name} on Qrenuvi`} phones={acts?.phones ?? []} emails={acts?.emails ?? []} websites={acts?.websites ?? []} vcfHref={vcfHref} preview={preview} showSave={s.kind === "business"} />
-        {s.blocks.filter((b) => b.type !== "header").map((b) => <Section key={b.id} b={b} fileBase={fileBase} mediaBase={mediaBase} />)}
+        {s.blocks.filter((b) => b.type !== "header").map((b) => <Section key={b.id} b={b} fileBase={fileBase} mediaBase={mediaBase} kind={s.kind} itemBase={itemBase} />)}
       </div>
       {preview ? <p className="bg-warning-bg px-6 py-3 text-center text-sm text-warning">Preview of your saved draft. Only you can see this.</p> : null}
     </article>

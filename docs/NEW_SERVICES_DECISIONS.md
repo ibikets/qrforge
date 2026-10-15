@@ -172,3 +172,29 @@ The request limit (90/min per user) is not the only protection. Layers, in order
 6. Staff "File usage" panel (Pages screen) shows per-customer file counts and bytes by type, no names/paths/contact data.
 
 Not claimed: malware scanning, global (cross-instance) concurrency, per-workspace quotas beyond the plan storage cap.
+
+## Phase 5: menus, catalogue, events, campaigns, offers
+
+Built on the section-page engine; no schema change (kinds `menu`, `product`, `event`, `campaign`, `coupon` were already allowed by migration 20261017000000).
+
+| Service | Kind | Sections | Publish needs |
+|---|---|---|---|
+| Restaurant menu | `menu` | menu items (categories, dishes), hours, location, contact, socials, text, button | one named dish |
+| Product catalogue | `product` | product items (categories), contact, location, hours, socials, text, button | one named product and a public WhatsApp number or email |
+| Event page | `event` | event details (start, end, zone, online flag), text, location, button (registration), contact, socials | a start date and time |
+| Campaign page | `campaign` | text, offers (up to 3), event dates, gallery, buttons, links, contact, socials | a button |
+| Offers page | `coupon` | offers (up to 6), text, location, contact, button, socials | one titled offer |
+
+Shared "items" section: up to 12 categories, 40 items per category, 100 items per page; name, description, price (digits, up to two decimals, shown with the page currency NGN/USD/GBP/EUR/GHS/KES/ZAR), availability (menus: available/limited/sold out; catalogues add pre-order), optional photo (alt text is the item name), dietary labels (menus only). Photos reuse the private media store, WebP re-encode, EXIF stripping, quotas and the 60-files-per-page cap, so a page can show at most 60 photos.
+
+Individual product pages: `/p/<publicId>/item/<itemId>` (ids are stable while the product exists; unknown ids and unpublished catalogues show a neutral page). Search and category filter run in the browser over the published snapshot. The WhatsApp/email button is built server-side from the page's own public contact and names the product and price.
+
+Honest scope. "Shop" means catalogue plus enquiries. There is no cart, checkout, payment, stock count, order record, shipping or tax. Menus cannot take orders. Event pages do not collect sign-ups. Offers are display-only: Qrenuvi never checks, applies or redeems a code, and they are unrelated to Qrenuvi subscription discounts (`quotes`/`redemptions` in the management schema). Expiry is evaluated at view time in the offer's own time zone; events show "ended" using their own zone.
+
+Chooser: "New page" is a compact icon grid in three groups; names and icons come from one mapping (`components/pages/kind-ui.tsx`, `kindLabel`); the selected service is described once below the grid (plus its limits notice). Store identifiers are unchanged. Plan gating is unchanged (the page still explains Pro/Business for free accounts).
+
+Evidence. Local: `tests/pages-phase5.ts` (~90 checks), `tests/e2e/phase5.mjs` (browser against the stand-ins: all 14 tiles, menu, catalogue, product pages, event, offers, campaign, axe, no sideways scroll at 320/390, screenshots in `docs/phase5/`). Engine: `tests/db/kinds.test.mjs` (all kinds accepted). Not done: real Supabase/Storage run, physical phone check, screen reader.
+
+### Full commerce is a separate extension (not built)
+
+Cart, checkout, merchant payments, inventory, orders, shipping and tax need their own design and decisions: a merchant payment provider and settlement model separate from Qrenuvi's own Paystack subscription flow (customers' money must never pass through Qrenuvi's subscription account without a deliberate decision), order and stock tables with concurrency control, refunds/disputes handling, delivery options, tax rules, customer notifications, merchant terms and compliance. Treat it as its own project once there is a cost and provider decision.

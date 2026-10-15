@@ -8,9 +8,13 @@
  */
 import { ACCENTS, buildVcf, newRowId, rowProblem, websiteUrl, type AccentId, type CardRow } from "@/lib/pages/card";
 import { socialUrl } from "@/lib/qr-contact";
+import {
+  MENU_STATUSES, isCurrency, isDietary, isStatus, parsePrice, validDateOnly, validLocalDateTime, zonedToEpoch,
+  type Currency, type Dietary, type ItemStatus,
+} from "@/lib/pages/items";
 
-export type BlockKind = "business" | "links" | "social" | "document" | "collection" | "gallery" | "resume" | "presentation";
-export type BlockType = "header" | "text" | "actions" | "links" | "socials" | "hours" | "location" | "button" | "file" | "documents" | "gallery" | "entries";
+export type BlockKind = "business" | "links" | "social" | "document" | "collection" | "gallery" | "resume" | "presentation" | "menu" | "product" | "event" | "campaign" | "coupon";
+export type BlockType = "header" | "text" | "actions" | "links" | "socials" | "hours" | "location" | "button" | "file" | "documents" | "gallery" | "entries" | "items" | "event" | "offer";
 
 export type LinkItem = { id: string; label: string; url: string; note: string };
 /** Facts about a stored file. Written by the server from the file's own record on every save and publish; a browser-supplied value is overwritten. */
@@ -20,6 +24,9 @@ export type DocItem = { id: string; title: string; description: string; fileId: 
 export type GalleryItem = { id: string; imageId: string | null; caption: string; alt: string; meta: ImgMeta | null };
 export type EntryItem = { id: string; title: string; org: string; period: string; summary: string };
 export type DayHours = { closed: boolean; open: string; close: string };
+/** One priced entry: a dish on a menu or a product in a catalogue. The photo is optional; its alt text is the item name. */
+export type CatItem = { id: string; name: string; description: string; price: string; imageId: string | null; meta: ImgMeta | null; status: ItemStatus; tags: Dietary[] };
+export type Category = { id: string; name: string; items: CatItem[] };
 type Common = { id: string; hidden: boolean };
 export type Block =
   | (Common & { type: "header"; name: string; tagline: string; portraitId: string | null; logoId: string | null; coverId: string | null })
@@ -33,7 +40,10 @@ export type Block =
   | (Common & { type: "file"; heading: string; label: string; description: string; fileId: string | null; url: string; meta: FileMeta | null })
   | (Common & { type: "documents"; heading: string; items: DocItem[] })
   | (Common & { type: "gallery"; heading: string; items: GalleryItem[] })
-  | (Common & { type: "entries"; heading: string; items: EntryItem[] });
+  | (Common & { type: "entries"; heading: string; items: EntryItem[] })
+  | (Common & { type: "items"; heading: string; currency: Currency; categories: Category[] })
+  | (Common & { type: "event"; startsAt: string; endsAt: string; timezone: string; online: boolean })
+  | (Common & { type: "offer"; title: string; code: string; description: string; validFrom: string; validUntil: string; timezone: string; conditions: string });
 export type PageContent = { v: 2; kind: BlockKind; accent: AccentId; blocks: Block[] };
 export type BlockErrors = Record<string, string>;
 
@@ -45,6 +55,10 @@ export const MAX_ACTION_ROWS = 10;
 export const MAX_DOCS = 30;
 export const MAX_GALLERY = 40;
 export const MAX_ENTRIES = 12;
+export const MAX_CATEGORIES = 12;
+export const MAX_ITEMS_PER_CATEGORY = 40;
+export const MAX_ITEMS = 100;
+export const CODE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/;
 
 export type KindInfo = {
   label: string; blurb: string; titleHint: string;
@@ -52,8 +66,10 @@ export type KindInfo = {
   allow: Exclude<BlockType, "header">[];
   start: Exclude<BlockType, "header">[];
   max: Partial<Record<BlockType, number>>;
+  /** Plain-language limits shown in the editor and on the chooser step. */
+  notice?: string;
 };
-export const BLOCK_KINDS: BlockKind[] = ["business", "links", "social", "document", "collection", "gallery", "resume", "presentation"];
+export const BLOCK_KINDS: BlockKind[] = ["business", "links", "social", "document", "collection", "gallery", "resume", "presentation", "menu", "product", "event", "campaign", "coupon"];
 export const KIND_INFO: Record<BlockKind, KindInfo> = {
   business: {
     label: "Business page", titleHint: "e.g. Acme Ltd – main page",
@@ -110,6 +126,50 @@ export const KIND_INFO: Record<BlockKind, KindInfo> = {
     portrait: false, logo: false, cover: true, tagline: "What this presentation covers",
     allow: ["file", "text", "button"], start: ["file"], max: { header: 1, file: 1, text: 2, button: 2 },
   },
+  menu: {
+    label: "Restaurant menu", titleHint: "e.g. Mama Put – dinner menu",
+    blurb: "Your menu in categories, with photos, descriptions, prices, availability and dietary labels. Opening hours and location included.",
+    portrait: false, logo: true, cover: true, tagline: "Cuisine or a short welcome",
+    allow: ["items", "text", "hours", "location", "actions", "socials", "button"],
+    start: ["items", "hours", "location", "actions"],
+    max: { header: 1, items: 1, text: 2, hours: 1, location: 1, actions: 1, socials: 1, button: 2 },
+    notice: "This page shows your menu. Visitors cannot order or pay through it. Keep prices and availability up to date by publishing changes.",
+  },
+  product: {
+    label: "Product catalogue", titleHint: "e.g. Ada Fashion – catalogue",
+    blurb: "A shop window: products in categories with photos, prices and availability, each with its own page and a WhatsApp or email enquiry button.",
+    portrait: false, logo: true, cover: true, tagline: "What you sell, in a few words",
+    allow: ["items", "text", "actions", "location", "hours", "socials", "button"],
+    start: ["items", "actions", "text"],
+    max: { header: 1, items: 1, text: 2, actions: 1, location: 1, hours: 1, socials: 1, button: 2 },
+    notice: "This is a catalogue with enquiries. There is no cart, checkout, payment, stock count, order tracking or delivery: people contact you by WhatsApp or email to buy.",
+  },
+  event: {
+    label: "Event page", titleHint: "e.g. Annual conference 2027",
+    blurb: "Date, time and time zone, venue or online link, a description and a registration button.",
+    portrait: false, logo: true, cover: true, tagline: "Event type or theme",
+    allow: ["event", "text", "location", "button", "actions", "socials"],
+    start: ["event", "text", "location", "button"],
+    max: { header: 1, event: 1, text: 3, location: 1, button: 3, actions: 1, socials: 1 },
+    notice: "Registration happens on the link you provide. Qrenuvi does not collect sign-ups or tickets.",
+  },
+  campaign: {
+    label: "Campaign page", titleHint: "e.g. Black Friday 2026",
+    blurb: "A focused landing page for a promotion or announcement: a strong cover, short message, offers and one clear button.",
+    portrait: false, logo: true, cover: true, tagline: "The one-line message",
+    allow: ["text", "offer", "event", "gallery", "button", "links", "actions", "socials"],
+    start: ["text", "button"],
+    max: { header: 1, text: 3, offer: 3, event: 1, gallery: 1, button: 3, links: 1, actions: 1, socials: 1 },
+  },
+  coupon: {
+    label: "Offers page", titleHint: "e.g. Weekend offers",
+    blurb: "Show your own offers with a code, how long each is valid and the conditions. For display: Qrenuvi does not apply or redeem codes.",
+    portrait: false, logo: true, cover: true, tagline: "Who is making these offers",
+    allow: ["offer", "text", "location", "actions", "button", "socials"],
+    start: ["offer"],
+    max: { header: 1, offer: 6, text: 2, location: 1, actions: 1, button: 2, socials: 1 },
+    notice: "Offers are shown to visitors only. Qrenuvi does not apply, check or redeem codes. They are separate from Qrenuvi subscription discounts.",
+  },
 };
 export const isBlockKind = (k: unknown): k is BlockKind => typeof k === "string" && (BLOCK_KINDS as string[]).includes(k);
 
@@ -141,6 +201,7 @@ export function validTimeZone(tz: string): boolean {
 export const DEFAULT_TZ = "Africa/Lagos";
 export const defaultDays = (): DayHours[] => Array.from({ length: 7 }, (_, i) => ({ closed: i === 6, open: "09:00", close: "17:00" }));
 
+export const emptyItem = (): CatItem => ({ id: newRowId(), name: "", description: "", price: "", imageId: null, meta: null, status: "available", tags: [] });
 export function emptyBlock(type: BlockType): Block {
   const c = { id: newBlockId(), hidden: false };
   switch (type) {
@@ -156,6 +217,9 @@ export function emptyBlock(type: BlockType): Block {
     case "documents": return { ...c, type, heading: "Documents", items: [{ id: newRowId(), title: "", description: "", fileId: null, url: "", meta: null }] };
     case "gallery": return { ...c, type, heading: "", items: [] };
     case "entries": return { ...c, type, heading: "Experience", items: [{ id: newRowId(), title: "", org: "", period: "", summary: "" }] };
+    case "items": return { ...c, type, heading: "", currency: "NGN", categories: [{ id: newRowId(), name: "", items: [emptyItem()] }] };
+    case "event": return { ...c, type, startsAt: "", endsAt: "", timezone: DEFAULT_TZ, online: false };
+    case "offer": return { ...c, type, title: "", code: "", description: "", validFrom: "", validUntil: "", timezone: DEFAULT_TZ, conditions: "" };
   }
 }
 export function emptyContent(kind: BlockKind): PageContent {
@@ -213,8 +277,31 @@ function normaliseBlock(raw: unknown, seen: Set<string>): Block | null {
       const ids = new Set<string>();
       return { ...c, type: "entries", heading: str(o.heading, 60), items: arr(o.items).slice(0, MAX_ENTRIES).flatMap((x) => { const i = obj(x); return i ? [{ id: uniqueId(i.id, ids, newRowId), title: str(i.title, 80), org: str(i.org, 80), period: str(i.period, 40), summary: str(i.summary, 500) }] : []; }) };
     }
+    case "items": {
+      const cids = new Set<string>(); let total = 0;
+      const categories = arr(o.categories).slice(0, MAX_CATEGORIES).flatMap((x): Category[] => {
+        const cat = obj(x); if (!cat) return [];
+        const iids = new Set<string>();
+        const items = arr(cat.items).slice(0, MAX_ITEMS_PER_CATEGORY).flatMap((y): CatItem[] => {
+          const i = obj(y); if (!i || total >= MAX_ITEMS) return [];
+          total++;
+          return [{ id: uniqueId(i.id, iids, newRowId), name: str(i.name, 80), description: str(i.description, 400), price: str(i.price, 14), imageId: media(i.imageId), meta: imgMeta(i.meta),
+            status: isStatus(i.status) ? i.status : "available", tags: [...new Set(arr(i.tags).filter(isDietary))] }];
+        });
+        return [{ id: uniqueId(cat.id, cids, newRowId), name: str(cat.name, 60), items }];
+      });
+      return { ...c, type: "items", heading: str(o.heading, 60), currency: isCurrency(o.currency) ? o.currency : "NGN", categories };
+    }
+    case "event": return { ...c, type: "event", startsAt: str(o.startsAt, 16), endsAt: str(o.endsAt, 16), timezone: str(o.timezone, 64) || DEFAULT_TZ, online: o.online === true };
+    case "offer": return { ...c, type: "offer", title: str(o.title, 80), code: str(o.code, 32), description: str(o.description, 400), validFrom: str(o.validFrom, 10), validUntil: str(o.validUntil, 10), timezone: str(o.timezone, 64) || DEFAULT_TZ, conditions: str(o.conditions, 600) };
     default: return null;
   }
+}
+
+/** Menus have no pre-order status and carry dietary labels; catalogues carry neither dietary labels. */
+function fixItems(kind: BlockKind, b: Extract<Block, { type: "items" }>): Block {
+  return { ...b, categories: b.categories.map((c) => ({ ...c, items: c.items.map((i) => ({
+    ...i, tags: kind === "menu" ? i.tags : [], status: kind === "menu" && !MENU_STATUSES.includes(i.status) ? "available" : i.status })) })) };
 }
 
 /** Coerce untrusted JSON into content for this kind: one header first, only allowed sections, counts capped. */
@@ -230,9 +317,10 @@ export function normaliseContent(kind: BlockKind, raw: unknown): PageContent {
     if (!b) continue;
     if (b.type === "header") { if (!header) header = { ...b, hidden: false, portraitId: info.portrait ? b.portraitId : null, logoId: info.logo ? b.logoId : null, coverId: info.cover ? b.coverId : null }; continue; }
     if (!info.allow.includes(b.type)) continue;
+    const fixed = b.type === "items" ? fixItems(kind, b) : b;
     counts[b.type] = (counts[b.type] ?? 0) + 1;
     if (counts[b.type]! > (info.max[b.type] ?? 1)) continue;
-    if (rest.length < MAX_BLOCKS - 1) rest.push(b);
+    if (rest.length < MAX_BLOCKS - 1) rest.push(fixed);
   }
   return { v: 2, kind, accent: ACCENTS.some((a) => a.id === r.accent) ? (r.accent as AccentId) : "forest", blocks: [header ?? emptyBlock("header"), ...rest] };
 }
@@ -330,6 +418,45 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
         }
         break;
       }
+      case "items": {
+        text("heading", b.heading);
+        const noun = c.kind === "menu" ? "dish" : "product";
+        for (const cat of b.categories) {
+          const ck = `${b.id}.cat.${cat.id}`;
+          if (CONTROL.test(cat.name)) e[ck] = "Remove unsupported characters.";
+          else if (forPublish && !cat.name && b.categories.length > 1 && cat.items.some((i) => i.name)) e[ck] = "Name this category, or move its items to another one.";
+          for (const it of cat.items) {
+            const k = `${b.id}.items.${it.id}`;
+            if ([it.name, it.description, it.price].some((v) => CONTROL.test(v))) e[k] = "Remove unsupported characters.";
+            else if (it.price && parsePrice(it.price) === null) e[k] = "Enter the price as a number, for example 2500 or 2500.50. Leave it empty to show no price.";
+            else if (forPublish && !it.name && (it.description || it.price || it.imageId)) e[k] = `Give this ${noun} a name, or remove it.`;
+          }
+        }
+        break;
+      }
+      case "event": {
+        const k = (f: string) => `${b.id}.${f}`;
+        if (!validTimeZone(b.timezone)) e[k("timezone")] = "Choose a valid time zone, for example Africa/Lagos.";
+        if (b.startsAt && !validLocalDateTime(b.startsAt)) e[k("startsAt")] = "Enter the start date and time.";
+        if (b.endsAt && !validLocalDateTime(b.endsAt)) e[k("endsAt")] = "Enter the end date and time, or leave it empty.";
+        if (!e[k("startsAt")] && !e[k("endsAt")] && !e[k("timezone")] && b.startsAt && b.endsAt) {
+          const s0 = zonedToEpoch(b.startsAt, b.timezone), e0 = zonedToEpoch(b.endsAt, b.timezone);
+          if (s0 !== null && e0 !== null && e0 <= s0) e[k("endsAt")] = "The end must be after the start.";
+        }
+        if (forPublish && !b.startsAt) e[k("startsAt")] = "Enter when the event starts.";
+        break;
+      }
+      case "offer": {
+        const k = (f: string) => `${b.id}.${f}`;
+        text("title", b.title); text("description", b.description); text("conditions", b.conditions);
+        if (b.code && !CODE_RE.test(b.code)) e[k("code")] = "Use 2 to 32 letters, numbers, dashes or underscores, with no spaces.";
+        if (b.validFrom && !validDateOnly(b.validFrom)) e[k("validFrom")] = "Enter a valid start date, or leave it empty.";
+        if (b.validUntil && !validDateOnly(b.validUntil)) e[k("validUntil")] = "Enter a valid end date, or leave it empty.";
+        if (!e[k("validFrom")] && !e[k("validUntil")] && b.validFrom && b.validUntil && b.validUntil < b.validFrom) e[k("validUntil")] = "The last day must not be before the first day.";
+        if (!validTimeZone(b.timezone)) e[k("timezone")] = "Choose a valid time zone, for example Africa/Lagos.";
+        if (forPublish && !b.title && (b.code || b.description || b.validFrom || b.validUntil || b.conditions)) e[k("title")] = "Give this offer a title.";
+        break;
+      }
     }
   }
   if (forPublish && header?.type === "header") {
@@ -340,6 +467,15 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
     if ((c.kind === "document" || c.kind === "presentation") && !shown.some((b) => b.type === "file")) e.page = c.kind === "document" ? "Add the document (an uploaded PDF or a link) before publishing." : "Add the slides (an uploaded PDF or a link) before publishing.";
     if (c.kind === "collection" && !shown.some((b) => b.type === "documents")) e.page = "Add at least one finished document (title and file or link) before publishing.";
     if (c.kind === "gallery" && !shown.some((b) => b.type === "gallery")) e.page = "Add at least one image before publishing.";
+    if (c.kind === "menu" && !shown.some((b) => b.type === "items")) e.page = "Add at least one dish with a name before publishing.";
+    if (c.kind === "product") {
+      const cat = shown.find((b) => b.type === "items");
+      if (!cat) e.page = "Add at least one product with a name before publishing.";
+      else if (cat.type === "items" && !cat.enquiry) e.page = "Add a WhatsApp number (tick “WhatsApp button”) or an email address in Contact buttons, and show it on the page, so people can enquire about products.";
+    }
+    if (c.kind === "event" && !shown.some((b) => b.type === "event")) e.page = "Add the event date and time before publishing.";
+    if (c.kind === "campaign" && !shown.some((b) => b.type === "button")) e.page = "Add a button (with a label and address) so visitors know what to do next.";
+    if (c.kind === "coupon" && !shown.some((b) => b.type === "offer")) e.page = "Add at least one offer with a title before publishing.";
   }
   return e;
 }
@@ -367,7 +503,14 @@ export type PubBlock =
   | { id: string; type: "file"; heading: string; label: string; description: string; fileId: string | null; href: string | null; host: string | null; meta: FileMeta | null }
   | { id: string; type: "documents"; heading: string; items: PubDoc[] }
   | { id: string; type: "gallery"; heading: string; items: PubImage[] }
-  | { id: string; type: "entries"; heading: string; items: EntryItem[] };
+  | { id: string; type: "entries"; heading: string; items: EntryItem[] }
+  | { id: string; type: "items"; heading: string; currency: Currency; categories: PubCategory[]; enquiry: Enquiry | null }
+  | { id: string; type: "event"; startsAt: string; endsAt: string; timezone: string; online: boolean }
+  | { id: string; type: "offer"; title: string; code: string; description: string; validFrom: string; validUntil: string; timezone: string; conditions: string };
+export type PubItem = { id: string; name: string; description: string; price: number | null; imageId: string | null; w: number; h: number; status: ItemStatus; tags: Dietary[] };
+export type PubCategory = { id: string; name: string; items: PubItem[] };
+/** How a visitor can ask about a product: the page's first public WhatsApp number, else its first public email address. */
+export type Enquiry = { whatsapp: string | null; email: string | null };
 export type PubDoc = { id: string; title: string; description: string; fileId: string | null; href: string | null; host: string | null; meta: FileMeta | null };
 export type PubImage = { id: string; imageId: string; caption: string; alt: string; w: number; h: number };
 export type PageSnapshot = { v: 2; kind: BlockKind; accent: AccentId; blocks: PubBlock[] };
@@ -378,6 +521,15 @@ const telHref = (v: string) => `tel:${v.trim().startsWith("+") ? "+" : ""}${digi
 const clean = (x: string) => x.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return null; } };
 export const mapHref = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+
+function enquiryOf(c: PageContent): Enquiry | null {
+  const a = c.blocks.find((b) => b.type === "actions" && !b.hidden);
+  if (a?.type !== "actions") return null;
+  const wa = a.phones.find((r) => r.public && r.whatsapp && r.value && !rowProblem("phones", r));
+  const em = a.emails.find((r) => r.public && r.value && !rowProblem("emails", r));
+  const whatsapp = wa ? digits(wa.value) : null;
+  return whatsapp || em ? { whatsapp, email: em ? em.value.trim() : null } : null;
+}
 
 function publicBlocks(c: PageContent): PubBlock[] {
   const out: PubBlock[] = [];
@@ -434,6 +586,33 @@ function publicBlocks(c: PageContent): PubBlock[] {
         if (items.length) out.push({ id: b.id, type: "entries", heading: b.heading, items });
         break;
       }
+      case "items": {
+        const categories = b.categories.flatMap((cat): PubCategory[] => {
+          if (CONTROL.test(cat.name)) return [];
+          const items = cat.items.flatMap((i): PubItem[] => {
+            if (!i.name || [i.name, i.description].some((v) => CONTROL.test(v))) return [];
+            const price = i.price ? parsePrice(i.price) : null;
+            if (i.price && price === null) return [];
+            const img = i.imageId && i.meta ? i : null;
+            return [{ id: i.id, name: i.name, description: i.description, price, imageId: img ? img.imageId : null, w: img?.meta?.w ?? 0, h: img?.meta?.h ?? 0, status: i.status, tags: i.tags }];
+          });
+          return items.length ? [{ id: cat.id, name: cat.name, items }] : [];
+        });
+        if (categories.length) out.push({ id: b.id, type: "items", heading: b.heading, currency: b.currency, categories, enquiry: c.kind === "product" ? enquiryOf(c) : null });
+        break;
+      }
+      case "event":
+        if (validLocalDateTime(b.startsAt) && validTimeZone(b.timezone)) {
+          const endOk = b.endsAt && validLocalDateTime(b.endsAt) && (zonedToEpoch(b.endsAt, b.timezone) ?? 0) > (zonedToEpoch(b.startsAt, b.timezone) ?? 0);
+          out.push({ id: b.id, type: "event", startsAt: b.startsAt, endsAt: endOk ? b.endsAt : "", timezone: b.timezone, online: b.online });
+        }
+        break;
+      case "offer": {
+        const okDates = (!b.validFrom || validDateOnly(b.validFrom)) && (!b.validUntil || validDateOnly(b.validUntil)) && (!b.validFrom || !b.validUntil || b.validUntil >= b.validFrom);
+        if (b.title && okDates && validTimeZone(b.timezone) && (!b.code || CODE_RE.test(b.code)) && ![b.title, b.description, b.conditions].some((v) => CONTROL.test(v)))
+          out.push({ id: b.id, type: "offer", title: b.title, code: b.code, description: b.description, validFrom: b.validFrom, validUntil: b.validUntil, timezone: b.timezone, conditions: b.conditions });
+        break;
+      }
     }
   }
   return out;
@@ -462,6 +641,13 @@ export function readPageSnapshot(raw: unknown): PageSnapshot | null {
       case "documents": return [{ ...b, items: arr(b.items).filter((i): i is PubDoc => { const x = obj(i); return !!x && typeof x.title === "string" && (typeof x.href === "string" || typeof x.fileId === "string"); }).map((i) => ({ ...i, description: str0(i.description), meta: i.meta ?? null, fileId: i.fileId ?? null, href: i.href ?? null, host: i.host ?? null })) }];
       case "gallery": return [{ ...b, items: arr(b.items).filter((i): i is PubImage => { const x = obj(i); return !!x && typeof x.imageId === "string" && typeof x.alt === "string" && typeof x.w === "number" && typeof x.h === "number"; }).map((i) => ({ ...i, caption: str0(i.caption) })) }];
       case "entries": return [{ ...b, items: arr(b.items).filter((i): i is EntryItem => { const x = obj(i); return !!x && typeof x.title === "string"; }).map((i) => ({ ...i, org: str0(i.org), period: str0(i.period), summary: str0(i.summary) })) }];
+      case "items": return [{ ...b, heading: str0(b.heading), currency: isCurrency(b.currency) ? b.currency : "NGN", enquiry: b.enquiry && typeof b.enquiry === "object" ? { whatsapp: typeof b.enquiry.whatsapp === "string" ? b.enquiry.whatsapp : null, email: typeof b.enquiry.email === "string" ? b.enquiry.email : null } : null,
+        categories: arr(b.categories).flatMap((cat): PubCategory[] => { const x = obj(cat); if (!x || typeof x.id !== "string") return [];
+          const items = arr(x.items).flatMap((i): PubItem[] => { const y = obj(i); return y && typeof y.id === "string" && typeof y.name === "string"
+            ? [{ id: y.id, name: y.name, description: str0(y.description), price: typeof y.price === "number" ? y.price : null, imageId: typeof y.imageId === "string" ? y.imageId : null, w: typeof y.w === "number" ? y.w : 0, h: typeof y.h === "number" ? y.h : 0, status: isStatus(y.status) ? y.status : "available", tags: arr(y.tags).filter(isDietary) }] : []; });
+          return [{ id: x.id, name: str0(x.name), items }]; }) }];
+      case "event": return typeof b.startsAt === "string" && typeof b.timezone === "string" ? [{ ...b, endsAt: str0(b.endsAt), online: b.online === true }] : [];
+      case "offer": return typeof b.title === "string" ? [{ ...b, code: str0(b.code), description: str0(b.description), validFrom: str0(b.validFrom), validUntil: str0(b.validUntil), timezone: str0(b.timezone) || DEFAULT_TZ, conditions: str0(b.conditions) }] : [];
       default: return [];
     }
   });
@@ -477,6 +663,7 @@ export function contentMedia(c: PageContent): MediaRef[] {
     else if (b.type === "file") { if (b.fileId) out.push({ id: b.fileId, kind: "file" }); }
     else if (b.type === "documents") { for (const i of b.items) if (i.fileId) out.push({ id: i.fileId, kind: "file" }); }
     else if (b.type === "gallery") { for (const i of b.items) if (i.imageId) out.push({ id: i.imageId, kind: "image" }); }
+    else if (b.type === "items") { for (const cat of b.categories) for (const i of cat.items) if (i.imageId) out.push({ id: i.imageId, kind: "image" }); }
   }
   return out;
 }
@@ -488,6 +675,7 @@ export function snapshotMediaIds(s: PageSnapshot): string[] {
     else if (b.type === "file") { if (b.fileId) out.push(b.fileId); }
     else if (b.type === "documents") { for (const i of b.items) if (i.fileId) out.push(i.fileId); }
     else if (b.type === "gallery") out.push(...b.items.map((i) => i.imageId));
+    else if (b.type === "items") { for (const cat of b.categories) for (const i of cat.items) if (i.imageId) out.push(i.imageId); }
   }
   return out;
 }
@@ -500,6 +688,7 @@ export function withStoredFacts(c: PageContent, by: Map<string, StoredFile>): Pa
     if (b.type === "file") return { ...b, meta: fm(b.fileId) };
     if (b.type === "documents") return { ...b, items: b.items.map((i) => ({ ...i, meta: fm(i.fileId) })) };
     if (b.type === "gallery") return { ...b, items: b.items.map((i) => ({ ...i, meta: im(i.imageId) })) };
+    if (b.type === "items") return { ...b, categories: b.categories.map((cat) => ({ ...cat, items: cat.items.map((i) => ({ ...i, meta: im(i.imageId) })) })) };
     return b;
   }) };
 }
@@ -511,6 +700,7 @@ export function withoutMissingMedia(c: PageContent, have: Set<string>): PageCont
     if (b.type === "file") return { ...b, fileId: k(b.fileId), meta: k(b.fileId) ? b.meta : null };
     if (b.type === "documents") return { ...b, items: b.items.map((i) => ({ ...i, fileId: k(i.fileId), meta: k(i.fileId) ? i.meta : null })) };
     if (b.type === "gallery") return { ...b, items: b.items.filter((i) => k(i.imageId)) };
+    if (b.type === "items") return { ...b, categories: b.categories.map((cat) => ({ ...cat, items: cat.items.map((i) => ({ ...i, imageId: k(i.imageId), meta: k(i.imageId) ? i.meta : null })) })) };
     return b;
   }) };
 }
