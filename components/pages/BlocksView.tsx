@@ -1,7 +1,9 @@
+import { LuDownload, LuExternalLink } from "react-icons/lu";
 import ActionBar from "@/components/pages/ActionBar";
+import GalleryView from "@/components/pages/GalleryView";
 import SocialIcons from "@/components/pages/SocialIcons";
 import { ACCENTS, initials } from "@/lib/pages/card";
-import { DAY_NAMES, type PageSnapshot, type PubBlock, type PubRow } from "@/lib/pages/blocks";
+import { DAY_NAMES, type FileMeta, type PageSnapshot, type PubBlock, type PubRow } from "@/lib/pages/blocks";
 
 const act = "inline-flex min-h-12 items-center justify-center rounded-control border border-black/15 bg-white px-4 py-3 text-base font-medium text-ink no-underline hover:bg-soft";
 const ext = (href: string) => (/^https?:\/\//i.test(href) ? { rel: "noopener noreferrer", target: "_blank" as const } : {});
@@ -24,7 +26,32 @@ function Rows({ title, rows }: { title: string; rows: PubRow[] }) {
   );
 }
 
-function Section({ b }: { b: PubBlock }) {
+const size = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const info = (m: FileMeta | null) => (m ? `PDF · ${size(m.bytes)}${m.pages ? ` · ${m.pages} page${m.pages === 1 ? "" : "s"}` : ""}` : "");
+
+/** One download/open action. Hosted PDFs are download-only (never previewed inline); external links say where they go. */
+function FileAction({ label, fileId, href, host, meta, fileBase, primary = true }: { label: string; fileId: string | null; href: string | null; host: string | null; meta: FileMeta | null; fileBase: string; primary?: boolean }) {
+  const cls = `${act} w-full gap-2 ${primary ? "!border-transparent !bg-brand !text-white hover:!bg-brand-hover" : ""}`;
+  if (fileId) {
+    const detail = info(meta);
+    return (
+      <div>
+        <a className={cls} href={`${fileBase}/${fileId}`} aria-label={detail ? `${label} (${detail})` : label}><LuDownload aria-hidden="true" size={20} /> <span>{label}</span></a>
+        {detail ? <p className="mt-1 text-center text-[13px] text-muted">{detail}</p> : null}
+      </div>
+    );
+  }
+  if (href && /^https:\/\//i.test(href))
+    return (
+      <div>
+        <a className={cls} href={href} rel="noopener noreferrer" target="_blank" aria-label={`${label} (opens ${host ?? "another site"} in a new tab)`}><LuExternalLink aria-hidden="true" size={20} /> <span>{label}</span></a>
+        <p className="mt-1 text-center text-[13px] text-muted">Opens on {host ?? "another site"}</p>
+      </div>
+    );
+  return null;
+}
+
+function Section({ b, fileBase, mediaBase }: { b: PubBlock; fileBase: string; mediaBase: string }) {
   switch (b.type) {
     case "text":
       return <section className="mb-6">{b.heading ? <h2 className="mb-1 text-sm font-medium text-muted">{b.heading}</h2> : null}<p className="whitespace-pre-line break-words text-base">{b.body}</p></section>;
@@ -78,12 +105,52 @@ function Section({ b }: { b: PubBlock }) {
       );
     case "button":
       return web(b.href) ? <p className="mb-6"><a className={`${act} w-full !border-transparent !bg-brand !text-white hover:!bg-brand-hover`} href={b.href} {...ext(b.href)}>{b.label}</a></p> : null;
+    case "file":
+      return (
+        <section aria-label={b.heading || b.label} className="mb-6">
+          {b.heading ? <h2 className="mb-1 text-sm font-medium text-muted">{b.heading}</h2> : null}
+          {b.description ? <p className="mb-3 whitespace-pre-line break-words text-base">{b.description}</p> : null}
+          <FileAction label={b.label} fileId={b.fileId} href={b.href} host={b.host} meta={b.meta} fileBase={fileBase} />
+        </section>
+      );
+    case "documents":
+      return (
+        <section aria-label={b.heading || "Documents"} className="mb-6">
+          {b.heading ? <h2 className="mb-2 text-sm font-medium text-muted">{b.heading}</h2> : null}
+          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+            {b.items.map((i) => (
+              <li key={i.id} className="rounded-control border border-divider p-4">
+                <h3 className="break-words text-base font-medium">{i.title}</h3>
+                {i.description ? <p className="mb-3 mt-1 whitespace-pre-line break-words text-sm text-muted">{i.description}</p> : <div className="mb-3" />}
+                <FileAction label={i.fileId ? "Download" : "Open"} fileId={i.fileId} href={i.href} host={i.host} meta={i.meta} fileBase={fileBase} primary={false} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case "gallery":
+      return <GalleryView items={b.items} mediaBase={mediaBase} heading={b.heading} />;
+    case "entries":
+      return (
+        <section aria-label={b.heading || "Entries"} className="mb-6">
+          {b.heading ? <h2 className="mb-2 text-sm font-medium text-muted">{b.heading}</h2> : null}
+          <ul className="m-0 flex list-none flex-col gap-4 p-0">
+            {b.items.map((i) => (
+              <li key={i.id}>
+                <p className="break-words text-base font-medium">{i.title}</p>
+                {i.org || i.period ? <p className="break-words text-sm text-muted">{[i.org, i.period].filter(Boolean).join(" · ")}</p> : null}
+                {i.summary ? <p className="mt-1 whitespace-pre-line break-words text-base">{i.summary}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
     default: return null;
   }
 }
 
 /** A section-built page as a visitor sees it. Renders only a stored snapshot, as text. */
-export default function BlocksView({ s, mediaBase, vcfHref, preview = false }: { s: PageSnapshot; mediaBase: string; vcfHref: string | null; preview?: boolean }) {
+export default function BlocksView({ s, mediaBase, fileBase, vcfHref, preview = false }: { s: PageSnapshot; mediaBase: string; fileBase: string; vcfHref: string | null; preview?: boolean }) {
   const accent = ACCENTS.find((a) => a.id === s.accent) ?? ACCENTS[0];
   const head = s.blocks.find((b) => b.type === "header");
   if (head?.type !== "header") return null;
@@ -92,6 +159,10 @@ export default function BlocksView({ s, mediaBase, vcfHref, preview = false }: {
   const acts = a?.type === "actions" ? a : null;
   return (
     <article aria-label={`Page for ${name}`} className="mx-auto w-full max-w-[440px] overflow-hidden rounded-panel bg-surface shadow-[0_1px_0_rgba(0,0,0,.06)]">
+      {head.coverId ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={`${mediaBase}/${head.coverId}`} alt="" width={440} height={220} className="aspect-[2/1] w-full object-cover" />
+      ) : null}
       <header style={{ background: accent.bg, color: accent.fg }} className="px-6 pb-6 pt-8 text-center">
         {head.portraitId ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -108,7 +179,7 @@ export default function BlocksView({ s, mediaBase, vcfHref, preview = false }: {
       </header>
       <div className="px-6 py-6">
         <ActionBar title={`${name} on Qrenuvi`} phones={acts?.phones ?? []} emails={acts?.emails ?? []} websites={acts?.websites ?? []} vcfHref={vcfHref} preview={preview} showSave={s.kind === "business"} />
-        {s.blocks.filter((b) => b.type !== "header").map((b) => <Section key={b.id} b={b} />)}
+        {s.blocks.filter((b) => b.type !== "header").map((b) => <Section key={b.id} b={b} fileBase={fileBase} mediaBase={mediaBase} />)}
       </div>
       {preview ? <p className="bg-warning-bg px-6 py-3 text-center text-sm text-warning">Preview of your saved draft. Only you can see this.</p> : null}
     </article>

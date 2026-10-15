@@ -21,7 +21,8 @@ function filterRows(rows, params) {
     const m = /^(eq|neq|gt|gte|lt|lte|is|in)\.(.*)$/.exec(v);
     if (!m) continue;
     const [, op, val] = m;
-    out = out.filter((r) => op === "eq" ? String(r[k]) === val : op === "neq" ? String(r[k]) !== val : op === "in" ? val.replace(/^\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(r[k])) : op === "is" ? (val === "null" ? r[k] == null : String(r[k]) === val) : true);
+    const g = (r) => { const j = /^(\w+)->>(\w+)$/.exec(k); return j ? r[j[1]]?.[j[2]] : r[k]; }; // PostgREST JSON path (col->>key)
+    out = out.filter((r) => op === "eq" ? String(g(r)) === val : op === "neq" ? String(r[k]) !== val : op === "in" ? val.replace(/^\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(r[k])) : op === "is" ? (val === "null" ? r[k] == null : String(r[k]) === val) : true);
   }
   const ord = params.get("order");
   if (ord) { const [col, dir] = ord.split("."); out = [...out].sort((a, b) => (a[col] > b[col] ? 1 : -1) * (dir === "desc" ? -1 : 1)); }

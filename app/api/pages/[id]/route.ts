@@ -1,6 +1,6 @@
 import { adm } from "@/lib/admin/db";
 import { engineFor } from "@/lib/pages/kinds";
-import { PAGE_BUCKET, PAGE_COLS, UUID, collectMedia, customer, jerr, mediaBelongs, ownedPage, refreshPage, type PageRow } from "@/lib/pages/server";
+import { PAGE_BUCKET, PAGE_COLS, UUID, collectMedia, customer, jerr, mediaBelongs, ownedPage, refreshPage, withFacts, type PageRow } from "@/lib/pages/server";
 import { readJson } from "@/lib/request-guards";
 
 type SaveBody = { title?: unknown; card?: unknown; content?: unknown; expectedVersion?: unknown };
@@ -22,10 +22,11 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!title) return jerr(422, "The page needs a name.", { field: "title" });
   const eng = engineFor(page.kind);
   if (!eng) return jerr(422, "This kind of page is not available yet.", { code: "kind" });
-  const card = eng.normalise(b.content ?? b.card);
-  const errors = eng.validate(card, false);
+  const incoming = eng.normalise(b.content ?? b.card);
+  const errors = eng.validate(incoming, false);
   if (Object.keys(errors).length) return jerr(422, "Fix the highlighted fields.", { errors });
-  if (!(await mediaBelongs(page.id, page.kind, card))) return jerr(422, "That image does not belong to this page.", { code: "media" });
+  if (!(await mediaBelongs(page.id, page.kind, incoming))) return jerr(422, "That file does not belong to this page.", { code: "media" });
+  const card = await withFacts(page.id, page.kind, incoming); // file names, sizes, pages and dimensions come from the stored records
 
   const { data, error } = await adm().from("pages")
     .update({ title, draft: card, draft_version: expected + 1, updated_at: new Date().toISOString() })

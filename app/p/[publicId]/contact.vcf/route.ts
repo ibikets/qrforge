@@ -13,7 +13,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
   const okR = r && r.state === "ok" ? r : null;
   if (okR && okR.kind !== "card") {
     const page = readPageSnapshot(okR.snapshot);
-    const body = page ? orgVcf(page) : null;
+    const body = page && okR.kind === "business" ? orgVcf(page) : null; // only business pages offer Save contact; a resume shares details on the page itself
     const head = page?.blocks.find((b) => b.type === "header");
     if (body && head?.type === "header") {
       const nm = head.name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "contact";

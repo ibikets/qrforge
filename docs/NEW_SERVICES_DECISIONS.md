@@ -131,3 +131,21 @@ Additional load: image uploads (CPU for `sharp`, up to 5 MB per request), privat
 - **Save contact:** a plain link (no `download` attribute) to `/p/<id>/contact.vcf`, served `text/vcard; charset=utf-8` with `Content-Disposition: inline` and a safe filename, so a browser that can hand a vCard to the OS contact handler is not forced into a file download. **Limits (honest):** no official platform documentation guarantees an "Add contact" sheet from a web link; iOS Safari commonly shows its contact card for inline `text/vcard`, Android Chrome normally downloads the file and the user taps it to import. The OS always asks for confirmation; the page never claims "contact saved". Not verified on a physical iOS or Android device from here.
 - **"Save contact (preview)":** this was the *editor preview* (vcf link is null there by design), not a shipped public state. Published cards link to the real file; the preview now shows a disabled icon and the line "Preview only. Save contact works on the published page."
 - **Evidence (Stand-in/Local):** `tests/e2e/icons.mjs` (targets ≥44 px, names, choosers list every entry, Escape/focus, share both paths, save link/headers/contents, axe WCAG 2.1 AA, 390 px, 200 % reflow); screenshot inspected; pages, blocks, url-typing, contact-photo re-run with updated selectors.
+
+## Phase 4: documents, collections, galleries, resumes, presentations (Oct 2026)
+
+**What shipped.** Five page kinds on the existing section engine (same drafts, revisions, publish RPC, stable URL and QR): `document`, `collection`, `gallery`, `resume`, `presentation`. New sections: `file` (PDF upload *or* https link), `documents` (ordered list), `gallery` (images with alt text and captions), `entries` (experience/education). Header gains an optional cover image for document, collection and presentation pages. No migration beyond 20261017000000 (already applied).
+
+**File safety (what is and is not claimed).**
+- Content, not name or browser MIME, decides: images are decoded by sharp with pixel limits, re-encoded to WebP and stripped of EXIF/location; a thumbnail is stored beside the original.
+- PDFs are **rebuilt from page content only** (pdf-lib): scripts, launch actions, embedded files, forms, annotations/links and metadata are not carried over. Limits: 10 MB, 300 pages. This is *not* malware scanning. Residual risk: a crafted PDF could still target a parser bug in pdf-lib at upload time, or in the visitor's PDF reader after download. Hence delivery is **download-only** (attachment, nosniff, no-store, never embedded). Inline preview stays off until a hardened renderer is chosen.
+- The site-wide proxy CSP replaces any per-route CSP; the attachment disposition is the control relied on.
+- Originals stay in the private `page-media` bucket. Public access needs the file to be referenced by the *currently published* version; owner access needs ownership of the page. Draft-only, replaced, unpublished and taken-down files return 404 at once (responses are not cached).
+- External document links must be https and are **never fetched** by Qrenuvi (no SSRF surface); visitors see the host before leaving.
+- Quotas stay server-side (plan_limits, triggers QF011/QF012, 60 files per page). Retried identical uploads return the existing file (sha256). Failed uploads remove what they stored. Non-card kinds keep only draft + live files, so older revisions restore without removed files.
+- Upload route limit raised from 30 to 90 requests/minute per user so a 40-image gallery can be built in one sitting.
+- The contact file (`contact.vcf`) is now explicitly business-only; a resume shows its details on the page and offers no Save contact.
+
+**Proposed allocations (no price or entitlement change).** Pro 25 MB and Business 100 MB unchanged. A 10 MB PDF and 5 MB images fit; typical re-encoded gallery images are well under 1 MB. Storage cost scales with Supabase plan limits; verify the current provider limit before any paid upgrade.
+
+**Not done / manual.** Staff usage view shows page kind only (per-account file count/bytes not yet in the admin list). Physical-phone viewing of downloads, screen-reader testing and signed-in production checks are manual.

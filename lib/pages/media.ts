@@ -53,3 +53,23 @@ export async function verifyContactPhoto(b64: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Gallery / cover image: PNG, JPEG or WebP judged by content, single frame, bounded pixels. Decoded and re-encoded (EXIF, location and
+ * appended data removed), fitted inside 1600px as WebP, plus a 480px WebP thumbnail used by grids. Never cropped, transparency kept.
+ */
+export async function processGalleryImage(input: Buffer): Promise<{ main: Buffer; thumb: Buffer; width: number; height: number }> {
+  try {
+    const first = await sharp(input, { limitInputPixels: MAX_PIXELS, failOn: "error" }).metadata();
+    if (first.format !== "png" && first.format !== "jpeg" && first.format !== "webp") throw new MediaError("Use a PNG, JPEG or WebP image. SVG and other formats are not accepted.");
+    if ((first.pages ?? 1) > 1) throw new MediaError("Animated images are not accepted. Use a single still image.");
+    if (!first.width || !first.height || first.width < 64 || first.height < 64) throw new MediaError("The image is too small. Use one at least 64 pixels on each side.");
+    const upright = await sharp(input, { limitInputPixels: MAX_PIXELS, failOn: "error" }).rotate().toBuffer();
+    const main = await sharp(upright).resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).webp({ quality: 80 }).toBuffer({ resolveWithObject: true });
+    const thumb = await sharp(upright).resize(480, 480, { fit: "inside", withoutEnlargement: true }).webp({ quality: 74 }).toBuffer();
+    return { main: main.data, thumb, width: main.info.width, height: main.info.height };
+  } catch (e) {
+    if (e instanceof MediaError) throw e;
+    throw new MediaError("That file could not be read as a valid image.");
+  }
+}

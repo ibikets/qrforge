@@ -1,6 +1,6 @@
 import { adm } from "@/lib/admin/db";
 import { engineFor } from "@/lib/pages/kinds";
-import { collectMedia, customer, jerr, ownedPage, refreshPage } from "@/lib/pages/server";
+import { collectMedia, customer, jerr, mediaBelongs, ownedPage, refreshPage, withFacts } from "@/lib/pages/server";
 import { readJson } from "@/lib/request-guards";
 
 /** Publish the saved draft. The database function swaps the live revision atomically; the public cache is refreshed after. */
@@ -17,7 +17,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Publish exactly what is saved, never what the browser says: validate the stored draft.
   const eng = engineFor(page.kind);
   if (!eng) return jerr(422, "This kind of page is not available yet.", { code: "kind" });
-  const card = eng.normalise(page.draft);
+  const stored = eng.normalise(page.draft);
+  if (!(await mediaBelongs(page.id, page.kind, stored))) return jerr(422, "A file on this page is missing. Reload and check your files.", { code: "media" });
+  const card = await withFacts(page.id, page.kind, stored);
   const errors = eng.validate(card, true);
   if (Object.keys(errors).length) return jerr(422, "Fix these before publishing.", { errors, code: "invalid" });
   const { data, error } = await adm().rpc("publish_page", { p_page: page.id, p_user: c.userId, p_expected: expected, p_content: eng.snapshot(card) });

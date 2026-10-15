@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { revalidateTag } from "next/cache";
 import { adm } from "@/lib/admin/db";
+import type { StoredFile } from "@/lib/pages/blocks";
 import { engineFor } from "@/lib/pages/kinds";
 import { PLANS, type PlanId } from "@/lib/plans";
 import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
@@ -58,16 +59,37 @@ export async function collectMedia(pageId: string, kind: string, draftIds: (stri
   const db = adm();
   const eng = engineFor(kind);
   if (!eng) return;
-  const [{ data: media }, { data: revs }] = await Promise.all([
+  const [{ data: media }, { data: revs }, { data: pg }] = await Promise.all([
     db.from("page_media").select("id,path,vcf_path").eq("page_id", pageId),
-    db.from("page_revisions").select("content").eq("page_id", pageId),
+    db.from("page_revisions").select("version,content").eq("page_id", pageId),
+    db.from("pages").select("published_version").eq("id", pageId).maybeSingle(),
   ]);
   const keep = new Set<string>(draftIds.filter((x): x is string => !!x));
-  for (const r of revs ?? []) { const snap = eng.readSnapshot(r.content); if (snap) for (const id of eng.snapshotMedia(snap)) keep.add(id); }
+  // Cards keep every retained revision's photos (original behaviour). Section pages hold real documents and many images, so they
+  // keep only the draft and the live version; older versions restore without files that are gone (shown to the owner).
+  const live = pg?.published_version as number | null | undefined;
+  for (const r of revs ?? []) {
+    if (kind !== "card" && r.version !== live) continue;
+    const snap = eng.readSnapshot(r.content); if (snap) for (const id of eng.snapshotMedia(snap)) keep.add(id);
+  }
   const drop = (media ?? []).filter((m: { id: string }) => !keep.has(m.id));
   if (!drop.length) return;
   await db.storage.from(PAGE_BUCKET).remove(drop.flatMap((m: { path: string; vcf_path: string | null }) => [m.path, ...(m.vcf_path ? [m.vcf_path] : [])]));
   await db.from("page_media").delete().in("id", drop.map((m: { id: string }) => m.id));
+}
+
+/** File facts (name, size, pages, dimensions) come from the stored records, never from the browser. */
+export async function withFacts(pageId: string, kind: string, content: unknown): Promise<unknown> {
+  const eng = engineFor(kind);
+  if (!eng?.withFacts) return content;
+  const ids = eng.mediaRefs(content).map((r) => r.id);
+  const by = new Map<string, StoredFile>();
+  if (ids.length) {
+    const { data } = await adm().from("page_media").select("id,kind,bytes,mime,width,height,original_name,meta").eq("page_id", pageId).in("id", ids);
+    for (const m of (data ?? []) as { id: string; kind: string; bytes: number; mime: string; width: number | null; height: number | null; original_name: string | null; meta: { pages?: number } | null }[])
+      by.set(m.id, { kind: m.kind, bytes: m.bytes, mime: m.mime, width: m.width, height: m.height, name: m.original_name, pages: typeof m.meta?.pages === "number" ? m.meta.pages : null });
+  }
+  return eng.withFacts(content, by);
 }
 
 export type PublicResult =
@@ -100,8 +122,8 @@ export async function publicMedia(publicId: string, mediaId: string) {
   const eng = engineFor(r.kind);
   const snap = eng?.readSnapshot(r.snapshot);
   if (!eng || !snap || !eng.snapshotMedia(snap).includes(mediaId)) return null;
-  const { data } = await adm().from("page_media").select("id,path,vcf_path,mime").eq("id", mediaId).maybeSingle();
-  return data as { id: string; path: string; vcf_path: string | null; mime: string } | null;
+  const { data } = await adm().from("page_media").select("id,kind,path,vcf_path,mime,original_name").eq("id", mediaId).maybeSingle();
+  return data as { id: string; kind: string; path: string; vcf_path: string | null; mime: string; original_name: string | null } | null;
 }
 
 /** Media referenced by a draft must belong to this page and have the kind the slot expects. */
@@ -113,4 +135,17 @@ export async function mediaBelongs(pageId: string, kind: string, content: unknow
   const { data } = await adm().from("page_media").select("id,kind").eq("page_id", pageId).in("id", refs.map((r) => r.id));
   const kinds = new Map((data ?? []).map((m: { id: string; kind: string }) => [m.id, m.kind]));
   return refs.every((r) => kinds.get(r.id) === r.kind);
+}
+
+/** A display name for a stored document: no path, no control or markup characters, at most 100 characters, never empty. */
+export function cleanName(raw: string): string {
+  const base = raw.split(/[\\/]/).pop() ?? "";
+  const cleaned = base.normalize("NFC").replace(/[\u0000-\u001f\u007f<>:"|?*\\]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
+  const stem = cleaned.replace(/\.pdf$/i, "").slice(0, 96).trim();
+  return (stem || "document") + ".pdf";
+}
+/** Safe Content-Disposition value for a download: ASCII fallback plus RFC 5987 UTF-8 name. */
+export function attachment(name: string): string {
+  const ascii = name.normalize("NFKD").replace(/[^\x20-\x7e]/g, "").replace(/["\\;]/g, "").trim() || "document.pdf";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name).replace(/['()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`;
 }

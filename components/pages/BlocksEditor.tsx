@@ -5,12 +5,13 @@ import BlocksView from "@/components/pages/BlocksView";
 import LogoField from "@/components/pages/LogoField";
 import PhotoField from "@/components/pages/PhotoField";
 import PreviewBoundary from "@/components/pages/PreviewBoundary";
+import UploadField from "@/components/pages/UploadField";
 import { Button } from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
 import { TextArea, TextField, controlClass } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
 import {
-  DAY_NAMES, KIND_INFO, MAX_ACTION_ROWS, MAX_LINKS, MAX_SOCIALS, emptyBlock, snapshotOfContent, validateContent, validTimeZone,
+  DAY_NAMES, KIND_INFO, MAX_ACTION_ROWS, MAX_DOCS, MAX_ENTRIES, MAX_GALLERY, MAX_LINKS, MAX_SOCIALS, emptyBlock, snapshotOfContent, validateContent, validTimeZone,
   type Block, type BlockErrors, type BlockType, type PageContent,
 } from "@/lib/pages/blocks";
 import { ACCENTS, newRowId, rowProblem, websiteUrl, type CardRow, type RowGroup } from "@/lib/pages/card";
@@ -23,7 +24,7 @@ type Props = {
   publicUrl: string; revisions: Rev[]; canEdit: boolean; takenDown: boolean; qrSvg: string;
 };
 const LIFE: Record<string, string> = { draft: "Draft, not published", published: "Published", unpublished: "Unpublished", archived: "Archived" };
-const NAMES: Record<Exclude<BlockType, "header">, string> = { text: "Text", actions: "Contact buttons", links: "Link list", socials: "Social profiles", hours: "Opening hours", location: "Location", button: "Button" };
+const NAMES: Record<Exclude<BlockType, "header">, string> = { text: "Text", actions: "Contact buttons", links: "Link list", socials: "Social profiles", hours: "Opening hours", location: "Location", button: "Button", file: "Document or slides", documents: "Documents", gallery: "Images", entries: "Experience or education" };
 const ROWS: Record<RowGroup, { title: string; singular: string; placeholder: string; inputMode: "tel" | "email" | "url" | "text"; labels: { id: string; label: string }[] }> = {
   phones: { title: "Phone numbers", singular: "phone number", placeholder: "+234 800 000 0000", inputMode: "tel", labels: GROUPS.phone.types },
   emails: { title: "Email addresses", singular: "email address", placeholder: "name@example.com", inputMode: "email", labels: GROUPS.email.types },
@@ -152,6 +153,31 @@ export default function BlocksEditor(p: Props) {
   const shown = preview.blocks.length - 1;
 
   // ----- pieces -----
+  const fileSize = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  /** A PDF upload or an https link (never both) with file facts, replace and remove. */
+  function fileSlot({ k, idp, fileId, url, meta, errMsg, set }: { k: string; idp: string; fileId: string | null; url: string; meta: { name: string; bytes: number; pages: number | null } | null; errMsg: string | null | undefined; set: (c: { fileId?: string | null; url?: string; meta?: { name: string; bytes: number; pages: number | null; mime: string } | null }) => void }) {
+    const linkErr = problem(`${k}.url`, () => (url && !/^https:\/\/[^\s/$.?#][^\s]*$/i.test(url.trim()) ? "Enter a link that starts with https:// (no spaces)." : null));
+    return (
+      <div className="mb-3">
+        {fileId ? (
+          <p className="mb-2 break-words text-sm"><span className="font-medium">{meta?.name ?? "Uploaded PDF"}</span>{meta ? <span className="text-muted"> · {fileSize(meta.bytes)}{meta.pages ? ` · ${meta.pages} page${meta.pages === 1 ? "" : "s"}` : ""}</span> : null}</p>
+        ) : null}
+        {!url ? <UploadField id={`${idp}-up`} pageId={p.id} kind="file" disabled={ro} hasFile={!!fileId} label="Upload a PDF" replaceLabel="Replace PDF" removeLabel="Remove PDF"
+          describe="PDF only, up to 10 MB. We rebuild it from its pages and keep it private; visitors can only download it while this page is published."
+          onRemove={() => set({ fileId: null, meta: null })}
+          onDone={(u) => { clearErr(`${k}.file`); set({ fileId: u.id, url: "", meta: { name: u.name ?? "document.pdf", bytes: u.bytes ?? 0, pages: u.pages ?? null, mime: "application/pdf" } }); }} /> : null}
+        {!fileId ? (
+          <div className="mt-3">
+            <label htmlFor={`${idp}-url`} className="mb-1 block text-sm font-medium">Or link to a document hosted elsewhere</label>
+            <input id={`${idp}-url`} inputMode="url" className={controlClass} placeholder="https://example.com/file.pdf" maxLength={500} value={url} aria-invalid={linkErr ? true : undefined} aria-describedby={linkErr ? `${k}-uerr` : undefined}
+              onBlur={() => touch(`${k}.url`)} onChange={(e) => { clearErr(`${k}.url`); clearErr(`${k}.file`); set({ url: e.target.value }); }} />
+            {linkErr ? <p id={`${k}-uerr`} className="mt-1 text-[13px] text-danger">{linkErr}</p> : <p className="mt-1 text-[13px] text-muted">Visitors will see where the link goes. We never open or download it for you.</p>}
+          </div>
+        ) : null}
+        {errMsg ? <p role="alert" className="mt-2 text-[13px] text-danger">{errMsg}</p> : null}
+      </div>
+    );
+  }
   function rowList({ b, group, rows, setRows, max }: { b: Block; group: RowGroup; rows: CardRow[]; setRows: (r: CardRow[]) => void; max: number }) {
     const m = ROWS[group];
     return (
@@ -193,6 +219,99 @@ export default function BlocksEditor(p: Props) {
         return <>
           <TextField id={`${b.id}-heading`} label="Heading (optional)" value={b.heading} maxLength={60} error={errors[`${b.id}.heading`]} onChange={(e) => patch(b.id, { heading: e.target.value }, `${b.id}.heading`)} />
           <TextArea id={`${b.id}-body`} label="Text" rows={4} value={b.body} maxLength={1200} error={errors[`${b.id}.body`]} help={`${b.body.length}/1200. Shown as plain text.`} onChange={(e) => patch(b.id, { body: e.target.value }, `${b.id}.body`)} />
+        </>;
+      case "file":
+        return <>
+          <TextField id={`${b.id}-heading`} label="Title" value={b.heading} maxLength={80} error={errors[`${b.id}.heading`]} onChange={(e) => patch(b.id, { heading: e.target.value }, `${b.id}.heading`)} />
+          <TextArea id={`${b.id}-desc`} label="Description (optional)" rows={3} value={b.description} maxLength={600} help={`${b.description.length}/600`} error={errors[`${b.id}.description`]} onChange={(e) => patch(b.id, { description: e.target.value }, `${b.id}.description`)} />
+          <TextField id={`${b.id}-label`} label="Button label" value={b.label} maxLength={40} help="For example Download or View slides." error={errors[`${b.id}.label`]} onChange={(e) => patch(b.id, { label: e.target.value }, `${b.id}.label`)} />
+          {fileSlot({ k: b.id, idp: b.id, fileId: b.fileId, url: b.url, meta: b.meta, errMsg: errors[`${b.id}.file`] ?? errors[`${b.id}.url`], set: (c) => patch(b.id, c as Partial<Block>) })}
+        </>;
+      case "documents":
+        return <>
+          <TextField id={`${b.id}-heading`} label="Heading (optional)" value={b.heading} maxLength={80} onChange={(e) => patch(b.id, { heading: e.target.value })} />
+          {b.items.map((it, i) => {
+            const k = `${b.id}.items.${it.id}`;
+            const upd = (c: Partial<typeof it>) => { clearErr(k); patch(b.id, { items: b.items.map((x, n) => (n === i ? { ...x, ...c } : x)) }); };
+            return (
+              <div key={it.id} className="mb-3 rounded-control border border-divider p-3">
+                <p className="mb-2 text-sm font-medium">Document {i + 1}</p>
+                <input id={`${b.id}-doc-${i}`} aria-label={`Document ${i + 1} title`} aria-invalid={errors[k] ? true : undefined} className={controlClass} placeholder="Title" maxLength={80} value={it.title} onChange={(ev) => upd({ title: ev.target.value })} />
+                <textarea aria-label={`Document ${i + 1} description (optional)`} rows={2} className={`${controlClass} mt-2`} placeholder="Short description (optional)" maxLength={300} value={it.description} onChange={(ev) => upd({ description: ev.target.value })} />
+                <div className="mt-2">{fileSlot({ k, idp: `${b.id}-d${i}`, fileId: it.fileId, url: it.url, meta: it.meta, errMsg: errors[k], set: (c) => upd(c as Partial<typeof it>) })}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button variant="ghost" id={`md-${it.id}-up`} disabled={i === 0} aria-label={`Move document ${i + 1} up`} onClick={() => { patch(b.id, { items: move(b.items, i, -1) }); focusSoon(`md-${it.id}-up`); }}>Move up</Button>
+                  <Button variant="ghost" id={`md-${it.id}-down`} disabled={i === b.items.length - 1} aria-label={`Move document ${i + 1} down`} onClick={() => { patch(b.id, { items: move(b.items, i, 1) }); focusSoon(`md-${it.id}-down`); }}>Move down</Button>
+                  <Button variant="ghost" className="ml-auto" aria-label={`Remove document ${i + 1}`} onClick={() => { patch(b.id, { items: b.items.filter((_, n) => n !== i) }); focusSoon(`${b.id}-add-doc`); }}>Remove</Button>
+                </div>
+              </div>
+            );
+          })}
+          <Button id={`${b.id}-add-doc`} variant="secondary" disabled={b.items.length >= MAX_DOCS} onClick={() => { patch(b.id, { items: [...b.items, { id: newRowId(), title: "", description: "", fileId: null, url: "", meta: null }] }); focusSoon(`${b.id}-doc-${b.items.length}`); }}>Add document</Button>
+          {b.items.length === 0 ? <p className="mt-2 text-sm text-muted">No documents yet. Add one to get started.</p> : null}
+          {b.items.length >= MAX_DOCS ? <p className="mt-1 text-[13px] text-muted">You can add up to {MAX_DOCS}.</p> : null}
+        </>;
+      case "gallery":
+        return <>
+          <TextField id={`${b.id}-heading`} label="Heading (optional)" value={b.heading} maxLength={80} onChange={(e) => patch(b.id, { heading: e.target.value })} />
+          {b.items.length === 0 ? <p className="mb-3 text-sm text-muted">No images yet. Add your first image below.</p> : null}
+          {b.items.map((it, i) => {
+            const k = `${b.id}.items.${it.id}`;
+            const upd = (c: Partial<typeof it>) => { clearErr(k); patch(b.id, { items: b.items.map((x, n) => (n === i ? { ...x, ...c } : x)) }); };
+            return (
+              <div key={it.id} className="mb-3 rounded-control border border-divider p-3">
+                <p className="mb-2 text-sm font-medium">Image {i + 1}</p>
+                <div className="flex flex-wrap items-start gap-3">
+                  {it.imageId ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/pages/${p.id}/media/${it.imageId}?size=thumb`} alt={it.alt || `Image ${i + 1} (no description yet)`} width={96} height={96} className="size-24 rounded-control border border-divider object-cover" />
+                  ) : null}
+                  <div className="min-w-0 flex-1 basis-56">
+                    <input id={`${b.id}-img-${i}`} aria-label={`Image ${i + 1} description for people who cannot see it (alt text)`} aria-invalid={errors[k] ? true : undefined} className={controlClass} placeholder="Describe the image (alt text)" maxLength={200} value={it.alt} onChange={(ev) => upd({ alt: ev.target.value })} />
+                    <input aria-label={`Image ${i + 1} caption (optional)`} className={`${controlClass} mt-2`} placeholder="Caption (optional)" maxLength={200} value={it.caption} onChange={(ev) => upd({ caption: ev.target.value })} />
+                  </div>
+                </div>
+                {errors[k] ? <p role="alert" className="mt-2 text-[13px] text-danger">{errors[k]}</p> : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <UploadField id={`${b.id}-rep-${i}`} pageId={p.id} kind="image" disabled={ro} hasFile={!!it.imageId} label="Upload image" replaceLabel="Replace image" onDone={(u) => upd({ imageId: u.id, meta: { w: u.width ?? 1, h: u.height ?? 1 } })} />
+                  <Button variant="ghost" id={`mg-${it.id}-up`} disabled={i === 0} aria-label={`Move image ${i + 1} up`} onClick={() => { patch(b.id, { items: move(b.items, i, -1) }); focusSoon(`mg-${it.id}-up`); }}>Move up</Button>
+                  <Button variant="ghost" id={`mg-${it.id}-down`} disabled={i === b.items.length - 1} aria-label={`Move image ${i + 1} down`} onClick={() => { patch(b.id, { items: move(b.items, i, 1) }); focusSoon(`mg-${it.id}-down`); }}>Move down</Button>
+                  <Button variant="ghost" className="ml-auto" aria-label={`Remove image ${i + 1}`} onClick={() => { patch(b.id, { items: b.items.filter((_, n) => n !== i) }); focusSoon(`${b.id}-add-img`); }}>Remove</Button>
+                </div>
+              </div>
+            );
+          })}
+          {b.items.length < MAX_GALLERY ? (
+            <UploadField id={`${b.id}-add-img`} pageId={p.id} kind="image" disabled={ro} hasFile={false} label="Add an image" describe="PNG, JPEG or WebP, up to 5 MB. Location and camera details are removed."
+              onDone={(u) => { const nid = newRowId(); patch(b.id, { items: [...b.items, { id: nid, imageId: u.id, caption: "", alt: "", meta: { w: u.width ?? 1, h: u.height ?? 1 } }] }); focusSoon(`${b.id}-img-${b.items.length}`); }} />
+          ) : <p className="text-[13px] text-muted">You can add up to {MAX_GALLERY} images.</p>}
+        </>;
+      case "entries":
+        return <>
+          <TextField id={`${b.id}-heading`} label="Section heading" value={b.heading} maxLength={60} help="For example Experience or Education." onChange={(e) => patch(b.id, { heading: e.target.value })} />
+          {b.items.map((it, i) => {
+            const k = `${b.id}.items.${it.id}`;
+            const upd = (c: Partial<typeof it>) => { clearErr(k); patch(b.id, { items: b.items.map((x, n) => (n === i ? { ...x, ...c } : x)) }); };
+            return (
+              <div key={it.id} className="mb-3 rounded-control border border-divider p-3">
+                <p className="mb-2 text-sm font-medium">Entry {i + 1}</p>
+                <input id={`${b.id}-ent-${i}`} aria-label={`Entry ${i + 1} title`} aria-invalid={errors[k] ? true : undefined} className={controlClass} placeholder="Job title or qualification" maxLength={80} value={it.title} onChange={(ev) => upd({ title: ev.target.value })} />
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <input aria-label={`Entry ${i + 1} organisation`} className={controlClass} placeholder="Company or school" maxLength={80} value={it.org} onChange={(ev) => upd({ org: ev.target.value })} />
+                  <input aria-label={`Entry ${i + 1} dates`} className={controlClass} placeholder="2021 – present" maxLength={40} value={it.period} onChange={(ev) => upd({ period: ev.target.value })} />
+                </div>
+                <textarea aria-label={`Entry ${i + 1} summary (optional)`} rows={3} className={`${controlClass} mt-2`} placeholder="What you did or achieved (optional)" maxLength={500} value={it.summary} onChange={(ev) => upd({ summary: ev.target.value })} />
+                {errors[k] ? <p role="alert" className="mt-2 text-[13px] text-danger">{errors[k]}</p> : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button variant="ghost" id={`me-${it.id}-up`} disabled={i === 0} aria-label={`Move entry ${i + 1} up`} onClick={() => { patch(b.id, { items: move(b.items, i, -1) }); focusSoon(`me-${it.id}-up`); }}>Move up</Button>
+                  <Button variant="ghost" id={`me-${it.id}-down`} disabled={i === b.items.length - 1} aria-label={`Move entry ${i + 1} down`} onClick={() => { patch(b.id, { items: move(b.items, i, 1) }); focusSoon(`me-${it.id}-down`); }}>Move down</Button>
+                  <Button variant="ghost" className="ml-auto" aria-label={`Remove entry ${i + 1}`} onClick={() => { patch(b.id, { items: b.items.filter((_, n) => n !== i) }); focusSoon(`${b.id}-add-ent`); }}>Remove</Button>
+                </div>
+              </div>
+            );
+          })}
+          <Button id={`${b.id}-add-ent`} variant="secondary" disabled={b.items.length >= MAX_ENTRIES} onClick={() => { patch(b.id, { items: [...b.items, { id: newRowId(), title: "", org: "", period: "", summary: "" }] }); focusSoon(`${b.id}-ent-${b.items.length}`); }}>Add entry</Button>
+          {b.items.length >= MAX_ENTRIES ? <p className="mt-1 text-[13px] text-muted">You can add up to {MAX_ENTRIES}.</p> : null}
         </>;
       case "actions":
         return <>
@@ -300,6 +419,16 @@ export default function BlocksEditor(p: Props) {
               <h2 id="hdr-h" className="mb-3 text-lg font-medium">Top of the page</h2>
               {info.portrait ? <PhotoField pageId={p.id} name={header.name} mediaId={header.portraitId} disabled={ro} onChange={(id) => patch(header.id, { portraitId: id })} setError={(t) => t && setMsg({ tone: "error", text: t })} /> : null}
               {info.logo ? <LogoField pageId={p.id} mediaId={header.logoId} disabled={ro} onChange={(id) => patch(header.id, { logoId: id })} setError={(t) => t && setMsg({ tone: "error", text: t })} /> : null}
+              {info.cover ? (
+                <fieldset className="mb-6 min-w-0 border-0 p-0" disabled={ro}>
+                  <legend className="mb-2 text-sm font-medium">Cover image (optional)</legend>
+                  {header.coverId ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/pages/${p.id}/media/${header.coverId}?size=thumb`} alt="Your cover image" width={96} height={96} className="mb-2 size-24 rounded-control border border-divider object-cover" />
+                  ) : null}
+                  <UploadField id="hdr-cover" pageId={p.id} kind="image" disabled={ro} hasFile={!!header.coverId} label="Add cover" replaceLabel="Replace cover" removeLabel="Remove cover" onRemove={() => patch(header.id, { coverId: null })} onDone={(u) => patch(header.id, { coverId: u.id })} />
+                </fieldset>
+              ) : null}
               <TextField id="hdr-name" label="Name" value={header.name} maxLength={80} autoComplete="off" error={errors[`${header.id}.name`]} onChange={(e) => patch(header.id, { name: e.target.value }, `${header.id}.name`)} />
               <TextField id="hdr-tagline" label="Tagline (optional)" value={header.tagline} maxLength={120} placeholder={info.tagline} error={errors[`${header.id}.tagline`]} onChange={(e) => patch(header.id, { tagline: e.target.value }, `${header.id}.tagline`)} />
             </section>
@@ -386,7 +515,7 @@ export default function BlocksEditor(p: Props) {
 
       <aside aria-label="Live preview" className="min-w-0 min-[1100px]:sticky min-[1100px]:top-6 min-[1100px]:self-start">
         <h2 className="mb-2 text-sm font-medium text-muted">Preview of your draft (shows what visitors will see)</h2>
-        <PreviewBoundary resetKey={preview}><BlocksView s={preview} mediaBase={`/api/pages/${p.id}/media`} vcfHref={null} preview /></PreviewBoundary>
+        <PreviewBoundary resetKey={preview}><BlocksView s={preview} mediaBase={`/api/pages/${p.id}/media`} fileBase={`/api/pages/${p.id}/file`} vcfHref={null} preview /></PreviewBoundary>
       </aside>
 
       <Dialog open={dlg === "publish"} onClose={() => setDlg("")} title={live ? "Publish these changes?" : "Publish this page?"}>

@@ -9,21 +9,31 @@
 import { ACCENTS, buildVcf, newRowId, rowProblem, websiteUrl, type AccentId, type CardRow } from "@/lib/pages/card";
 import { socialUrl } from "@/lib/qr-contact";
 
-export type BlockKind = "business" | "links" | "social";
-export type BlockType = "header" | "text" | "actions" | "links" | "socials" | "hours" | "location" | "button";
+export type BlockKind = "business" | "links" | "social" | "document" | "collection" | "gallery" | "resume" | "presentation";
+export type BlockType = "header" | "text" | "actions" | "links" | "socials" | "hours" | "location" | "button" | "file" | "documents" | "gallery" | "entries";
 
 export type LinkItem = { id: string; label: string; url: string; note: string };
+/** Facts about a stored file. Written by the server from the file's own record on every save and publish; a browser-supplied value is overwritten. */
+export type FileMeta = { name: string; bytes: number; pages: number | null; mime: string };
+export type ImgMeta = { w: number; h: number };
+export type DocItem = { id: string; title: string; description: string; fileId: string | null; url: string; meta: FileMeta | null };
+export type GalleryItem = { id: string; imageId: string | null; caption: string; alt: string; meta: ImgMeta | null };
+export type EntryItem = { id: string; title: string; org: string; period: string; summary: string };
 export type DayHours = { closed: boolean; open: string; close: string };
 type Common = { id: string; hidden: boolean };
 export type Block =
-  | (Common & { type: "header"; name: string; tagline: string; portraitId: string | null; logoId: string | null })
+  | (Common & { type: "header"; name: string; tagline: string; portraitId: string | null; logoId: string | null; coverId: string | null })
   | (Common & { type: "text"; heading: string; body: string })
   | (Common & { type: "actions"; phones: CardRow[]; emails: CardRow[]; websites: CardRow[] })
   | (Common & { type: "links"; heading: string; items: LinkItem[] })
   | (Common & { type: "socials"; heading: string; items: CardRow[] })
   | (Common & { type: "hours"; timezone: string; days: DayHours[]; note: string })
   | (Common & { type: "location"; address: string; note: string })
-  | (Common & { type: "button"; label: string; url: string });
+  | (Common & { type: "button"; label: string; url: string })
+  | (Common & { type: "file"; heading: string; label: string; description: string; fileId: string | null; url: string; meta: FileMeta | null })
+  | (Common & { type: "documents"; heading: string; items: DocItem[] })
+  | (Common & { type: "gallery"; heading: string; items: GalleryItem[] })
+  | (Common & { type: "entries"; heading: string; items: EntryItem[] });
 export type PageContent = { v: 2; kind: BlockKind; accent: AccentId; blocks: Block[] };
 export type BlockErrors = Record<string, string>;
 
@@ -32,20 +42,23 @@ export const MAX_BLOCKS = 20;
 export const MAX_LINKS = 30;
 export const MAX_SOCIALS = 12;
 export const MAX_ACTION_ROWS = 10;
+export const MAX_DOCS = 30;
+export const MAX_GALLERY = 40;
+export const MAX_ENTRIES = 12;
 
 export type KindInfo = {
   label: string; blurb: string; titleHint: string;
-  portrait: boolean; logo: boolean; tagline: string;
+  portrait: boolean; logo: boolean; cover: boolean; tagline: string;
   allow: Exclude<BlockType, "header">[];
   start: Exclude<BlockType, "header">[];
   max: Partial<Record<BlockType, number>>;
 };
-export const BLOCK_KINDS: BlockKind[] = ["business", "links", "social"];
+export const BLOCK_KINDS: BlockKind[] = ["business", "links", "social", "document", "collection", "gallery", "resume", "presentation"];
 export const KIND_INFO: Record<BlockKind, KindInfo> = {
   business: {
     label: "Business page", titleHint: "e.g. Acme Ltd – main page",
     blurb: "Who you are, when you are open, where to find you and how to reach you. Call, WhatsApp, email and directions in one place.",
-    portrait: true, logo: true, tagline: "What you do, in a few words",
+    portrait: true, logo: true, cover: false, tagline: "What you do, in a few words",
     allow: ["text", "actions", "hours", "location", "links", "socials", "button"],
     start: ["text", "actions", "hours", "location", "socials"],
     max: { header: 1, actions: 1, hours: 1, location: 1, socials: 1, text: 3, links: 3, button: 5 },
@@ -53,7 +66,7 @@ export const KIND_INFO: Record<BlockKind, KindInfo> = {
   links: {
     label: "Multi-link page", titleHint: "e.g. Ada – links",
     blurb: "One address that opens a tidy list of your most important links, in the order you choose.",
-    portrait: true, logo: true, tagline: "A line about you or your brand",
+    portrait: true, logo: true, cover: false, tagline: "A line about you or your brand",
     allow: ["links", "socials", "text", "button"],
     start: ["links", "socials"],
     max: { header: 1, socials: 1, text: 3, links: 3, button: 5 },
@@ -61,10 +74,41 @@ export const KIND_INFO: Record<BlockKind, KindInfo> = {
   social: {
     label: "Social profile page", titleHint: "e.g. Ada – socials",
     blurb: "All your social profiles on one page, with a short line about you. Profiles are built from handles, so they stay correct.",
-    portrait: true, logo: false, tagline: "A line about you",
+    portrait: true, logo: false, cover: false, tagline: "A line about you",
     allow: ["socials", "links", "text"],
     start: ["socials"],
     max: { header: 1, socials: 1, text: 2, links: 1 },
+  },
+  document: {
+    label: "Document page", titleHint: "e.g. 2026 price list",
+    blurb: "Share one PDF with a title, a short description, file details and a clear download button. Or link to a document that lives elsewhere.",
+    portrait: false, logo: false, cover: true, tagline: "What this document is, in a line",
+    allow: ["file", "text", "button"], start: ["file"], max: { header: 1, file: 1, text: 2, button: 3 },
+  },
+  collection: {
+    label: "Document collection", titleHint: "e.g. Onboarding pack",
+    blurb: "Several named documents on one page, each with its own description and download, in the order you choose.",
+    portrait: false, logo: false, cover: true, tagline: "What this collection is for",
+    allow: ["documents", "text"], start: ["documents"], max: { header: 1, documents: 1, text: 2 },
+  },
+  gallery: {
+    label: "Image gallery", titleHint: "e.g. Spring collection",
+    blurb: "A grid of your images with captions and alt text. Visitors can open each one full size.",
+    portrait: false, logo: false, cover: false, tagline: "A line about these images",
+    allow: ["gallery", "text"], start: ["gallery"], max: { header: 1, gallery: 1, text: 2 },
+  },
+  resume: {
+    label: "Resume page", titleHint: "e.g. Ada – resume",
+    blurb: "Your photo, headline, a short bio, experience and education, contact and social links, and an optional downloadable CV.",
+    portrait: true, logo: false, cover: false, tagline: "Professional headline",
+    allow: ["text", "entries", "actions", "socials", "file", "links"], start: ["text", "entries", "entries", "actions", "socials", "file"],
+    max: { header: 1, text: 2, entries: 3, actions: 1, socials: 1, file: 1, links: 1 },
+  },
+  presentation: {
+    label: "Presentation page", titleHint: "e.g. Q4 investor deck",
+    blurb: "Share slides as a PDF people can download, or link to a presentation hosted elsewhere, with a cover and description.",
+    portrait: false, logo: false, cover: true, tagline: "What this presentation covers",
+    allow: ["file", "text", "button"], start: ["file"], max: { header: 1, file: 1, text: 2, button: 2 },
   },
 };
 export const isBlockKind = (k: unknown): k is BlockKind => typeof k === "string" && (BLOCK_KINDS as string[]).includes(k);
@@ -73,9 +117,22 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ID = /^[a-z0-9_-]{1,24}$/i;
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+const httpsLink = (v: string) => { const u = websiteUrl(v); return u && u.startsWith("https://") ? u : null; };
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const newBlockId = () => "b" + Math.random().toString(36).slice(2, 10);
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").trim().slice(0, max) : "");
+const posInt = (v: unknown, max: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+function fileMeta(v: unknown): FileMeta | null {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  const bytes = o ? posInt(o.bytes, 50_000_000) : null;
+  if (!o || typeof o.name !== "string" || bytes === null || typeof o.mime !== "string") return null;
+  return { name: o.name.slice(0, 120), bytes, pages: posInt(o.pages, 100_000), mime: o.mime.slice(0, 60) };
+}
+function imgMeta(v: unknown): ImgMeta | null {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  const w = o ? posInt(o.w, 20_000) : null, h = o ? posInt(o.h, 20_000) : null;
+  return w && h ? { w, h } : null;
+}
 const media = (v: unknown) => (typeof v === "string" && UUID.test(v) ? v.toLowerCase() : null);
 
 export function validTimeZone(tz: string): boolean {
@@ -87,7 +144,7 @@ export const defaultDays = (): DayHours[] => Array.from({ length: 7 }, (_, i) =>
 export function emptyBlock(type: BlockType): Block {
   const c = { id: newBlockId(), hidden: false };
   switch (type) {
-    case "header": return { ...c, type, name: "", tagline: "", portraitId: null, logoId: null };
+    case "header": return { ...c, type, name: "", tagline: "", portraitId: null, logoId: null, coverId: null };
     case "text": return { ...c, type, heading: "About", body: "" };
     case "actions": return { ...c, type, phones: [{ id: newRowId(), label: "mobile", value: "", public: true, whatsapp: false }], emails: [{ id: newRowId(), label: "work", value: "", public: true }], websites: [{ id: newRowId(), label: "", value: "", public: true }] };
     case "links": return { ...c, type, heading: "Links", items: [{ id: newRowId(), label: "", url: "", note: "" }] };
@@ -95,6 +152,10 @@ export function emptyBlock(type: BlockType): Block {
     case "hours": return { ...c, type, timezone: DEFAULT_TZ, days: defaultDays(), note: "" };
     case "location": return { ...c, type, address: "", note: "" };
     case "button": return { ...c, type, label: "", url: "" };
+    case "file": return { ...c, type, heading: "", label: "Download", description: "", fileId: null, url: "", meta: null };
+    case "documents": return { ...c, type, heading: "Documents", items: [{ id: newRowId(), title: "", description: "", fileId: null, url: "", meta: null }] };
+    case "gallery": return { ...c, type, heading: "", items: [] };
+    case "entries": return { ...c, type, heading: "Experience", items: [{ id: newRowId(), title: "", org: "", period: "", summary: "" }] };
   }
 }
 export function emptyContent(kind: BlockKind): PageContent {
@@ -124,7 +185,7 @@ function normaliseBlock(raw: unknown, seen: Set<string>): Block | null {
   const o = obj(raw); if (!o) return null;
   const c = { id: uniqueId(o.id, seen, newBlockId), hidden: o.hidden === true };
   switch (o.type) {
-    case "header": return { ...c, type: "header", name: str(o.name, 80), tagline: str(o.tagline, 120), portraitId: media(o.portraitId), logoId: media(o.logoId) };
+    case "header": return { ...c, type: "header", name: str(o.name, 80), tagline: str(o.tagline, 160), portraitId: media(o.portraitId), logoId: media(o.logoId), coverId: media(o.coverId) };
     case "text": return { ...c, type: "text", heading: str(o.heading, 60), body: str(o.body, 1200) };
     case "actions": return { ...c, type: "actions", phones: rows(o.phones, MAX_ACTION_ROWS, 120, true), emails: rows(o.emails, MAX_ACTION_ROWS, 120, false), websites: rows(o.websites, MAX_ACTION_ROWS, 300, false) };
     case "links": {
@@ -139,6 +200,19 @@ function normaliseBlock(raw: unknown, seen: Set<string>): Block | null {
     }
     case "location": return { ...c, type: "location", address: str(o.address, 200), note: str(o.note, 200) };
     case "button": return { ...c, type: "button", label: str(o.label, 40), url: str(o.url, 300) };
+    case "file": return { ...c, type: "file", heading: str(o.heading, 60), label: str(o.label, 60), description: str(o.description, 400), fileId: media(o.fileId), url: str(o.url, 300), meta: fileMeta(o.meta) };
+    case "documents": {
+      const ids = new Set<string>();
+      return { ...c, type: "documents", heading: str(o.heading, 60), items: arr(o.items).slice(0, MAX_DOCS).flatMap((x) => { const i = obj(x); return i ? [{ id: uniqueId(i.id, ids, newRowId), title: str(i.title, 80), description: str(i.description, 300), fileId: media(i.fileId), url: str(i.url, 300), meta: fileMeta(i.meta) }] : []; }) };
+    }
+    case "gallery": {
+      const ids = new Set<string>();
+      return { ...c, type: "gallery", heading: str(o.heading, 60), items: arr(o.items).slice(0, MAX_GALLERY).flatMap((x) => { const i = obj(x); return i ? [{ id: uniqueId(i.id, ids, newRowId), imageId: media(i.imageId), caption: str(i.caption, 200), alt: str(i.alt, 200), meta: imgMeta(i.meta) }] : []; }) };
+    }
+    case "entries": {
+      const ids = new Set<string>();
+      return { ...c, type: "entries", heading: str(o.heading, 60), items: arr(o.items).slice(0, MAX_ENTRIES).flatMap((x) => { const i = obj(x); return i ? [{ id: uniqueId(i.id, ids, newRowId), title: str(i.title, 80), org: str(i.org, 80), period: str(i.period, 40), summary: str(i.summary, 500) }] : []; }) };
+    }
     default: return null;
   }
 }
@@ -154,7 +228,7 @@ export function normaliseContent(kind: BlockKind, raw: unknown): PageContent {
   for (const x of arr(r.blocks).slice(0, MAX_BLOCKS * 2)) {
     const b = normaliseBlock(x, seen);
     if (!b) continue;
-    if (b.type === "header") { if (!header) header = { ...b, hidden: false, portraitId: info.portrait ? b.portraitId : null, logoId: info.logo ? b.logoId : null }; continue; }
+    if (b.type === "header") { if (!header) header = { ...b, hidden: false, portraitId: info.portrait ? b.portraitId : null, logoId: info.logo ? b.logoId : null, coverId: info.cover ? b.coverId : null }; continue; }
     if (!info.allow.includes(b.type)) continue;
     counts[b.type] = (counts[b.type] ?? 0) + 1;
     if (counts[b.type]! > (info.max[b.type] ?? 1)) continue;
@@ -217,6 +291,45 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
         if (b.url && !websiteUrl(b.url)) e[`${b.id}.url`] = "Enter a website address such as example.com or https://example.com/page (no spaces).";
         else if (forPublish && (b.label || b.url) && !(b.label && b.url)) e[`${b.id}.${b.label ? "url" : "label"}`] = "A button needs both a label and an address.";
         break;
+      case "file": {
+        text("heading", b.heading); text("label", b.label); text("description", b.description);
+        const link = httpsLink(b.url);
+        if (b.fileId && b.url) e[`${b.id}.file`] = "Use either an uploaded PDF or a link, not both. Remove one.";
+        else if (b.url && !link) e[`${b.id}.url`] = "Enter a link that starts with https:// (no spaces).";
+        else if (forPublish && !b.fileId && !b.url) e[`${b.id}.file`] = "Upload a PDF or paste a link to the document.";
+        break;
+      }
+      case "documents": {
+        text("heading", b.heading);
+        for (const it of b.items) {
+          const k = `${b.id}.items.${it.id}`;
+          if (CONTROL.test(it.title) || CONTROL.test(it.description)) e[k] = "Remove unsupported characters.";
+          else if (it.fileId && it.url) e[k] = "Use either an uploaded PDF or a link for this document, not both.";
+          else if (it.url && !httpsLink(it.url)) e[k] = "Enter a link that starts with https:// (no spaces).";
+          else if (forPublish && (it.title || it.fileId || it.url) && !it.title) e[k] = "Give this document a title.";
+          else if (forPublish && it.title && !it.fileId && !it.url) e[k] = "Upload a PDF or paste a link for this document.";
+        }
+        break;
+      }
+      case "gallery": {
+        text("heading", b.heading);
+        for (const it of b.items) {
+          const k = `${b.id}.items.${it.id}`;
+          if (CONTROL.test(it.caption) || CONTROL.test(it.alt)) e[k] = "Remove unsupported characters.";
+          else if (forPublish && !it.imageId) e[k] = "This slot has no image. Upload one or remove it.";
+          else if (forPublish && !it.alt) e[k] = "Describe this image in a few words for people who cannot see it (alt text).";
+        }
+        break;
+      }
+      case "entries": {
+        text("heading", b.heading);
+        for (const it of b.items) {
+          const k = `${b.id}.items.${it.id}`;
+          if ([it.title, it.org, it.period, it.summary].some((v) => CONTROL.test(v))) e[k] = "Remove unsupported characters.";
+          else if (forPublish && (it.org || it.period || it.summary) && !it.title) e[k] = "Add a title for this entry (for example a job title or qualification).";
+        }
+        break;
+      }
     }
   }
   if (forPublish && header?.type === "header") {
@@ -224,6 +337,9 @@ export function validateContent(c: PageContent, forPublish: boolean): BlockError
     if (!shown.length) e.page = "Add some content people can use (contact details, a link, a profile or an introduction), then publish.";
     if (c.kind === "links" && !shown.some((b) => b.type === "links")) e.page = "Add at least one link before publishing a multi-link page.";
     if (c.kind === "social" && !shown.some((b) => b.type === "socials")) e.page = "Add at least one social profile before publishing.";
+    if ((c.kind === "document" || c.kind === "presentation") && !shown.some((b) => b.type === "file")) e.page = c.kind === "document" ? "Add the document (an uploaded PDF or a link) before publishing." : "Add the slides (an uploaded PDF or a link) before publishing.";
+    if (c.kind === "collection" && !shown.some((b) => b.type === "documents")) e.page = "Add at least one finished document (title and file or link) before publishing.";
+    if (c.kind === "gallery" && !shown.some((b) => b.type === "gallery")) e.page = "Add at least one image before publishing.";
   }
   return e;
 }
@@ -240,19 +356,27 @@ function dupes(blockId: string, group: string, list: CardRow[], key: (v: string)
 // ---------- the public snapshot ----------
 export type PubRow = { id: string; label: string; text: string; href: string; whatsapp?: string | null };
 export type PubBlock =
-  | { id: string; type: "header"; name: string; tagline: string; portraitId: string | null; logoId: string | null }
+  | { id: string; type: "header"; name: string; tagline: string; portraitId: string | null; logoId: string | null; coverId: string | null }
   | { id: string; type: "text"; heading: string; body: string }
   | { id: string; type: "actions"; phones: PubRow[]; emails: PubRow[]; websites: PubRow[] }
   | { id: string; type: "links"; heading: string; items: { id: string; label: string; note: string; href: string }[] }
   | { id: string; type: "socials"; heading: string; items: PubRow[] }
   | { id: string; type: "hours"; timezone: string; days: DayHours[]; note: string }
   | { id: string; type: "location"; address: string; note: string; mapHref: string }
-  | { id: string; type: "button"; label: string; href: string };
+  | { id: string; type: "button"; label: string; href: string }
+  | { id: string; type: "file"; heading: string; label: string; description: string; fileId: string | null; href: string | null; host: string | null; meta: FileMeta | null }
+  | { id: string; type: "documents"; heading: string; items: PubDoc[] }
+  | { id: string; type: "gallery"; heading: string; items: PubImage[] }
+  | { id: string; type: "entries"; heading: string; items: EntryItem[] };
+export type PubDoc = { id: string; title: string; description: string; fileId: string | null; href: string | null; host: string | null; meta: FileMeta | null };
+export type PubImage = { id: string; imageId: string; caption: string; alt: string; w: number; h: number };
 export type PageSnapshot = { v: 2; kind: BlockKind; accent: AccentId; blocks: PubBlock[] };
 
+const str0 = (v: unknown) => (typeof v === "string" ? v : "");
 const digits = (v: string) => v.replace(/\D/g, "");
 const telHref = (v: string) => `tel:${v.trim().startsWith("+") ? "+" : ""}${digits(v)}`;
 const clean = (x: string) => x.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+const hostOf = (u: string) => { try { return new URL(u).host; } catch { return null; } };
 export const mapHref = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 function publicBlocks(c: PageContent): PubBlock[] {
@@ -260,7 +384,7 @@ function publicBlocks(c: PageContent): PubBlock[] {
   for (const b of c.blocks) {
     if (b.hidden && b.type !== "header") continue;
     switch (b.type) {
-      case "header": out.push({ id: b.id, type: "header", name: b.name, tagline: b.tagline, portraitId: b.portraitId, logoId: b.logoId }); break;
+      case "header": out.push({ id: b.id, type: "header", name: b.name, tagline: b.tagline, portraitId: b.portraitId, logoId: b.logoId, coverId: b.coverId }); break;
       case "text": if (b.body && !CONTROL.test(b.body + b.heading)) out.push({ id: b.id, type: "text", heading: b.heading, body: b.body }); break;
       case "actions": {
         const ok = (g: "phones" | "emails" | "websites", l: CardRow[]) => l.filter((r) => r.public && r.value && !rowProblem(g, r));
@@ -283,6 +407,33 @@ function publicBlocks(c: PageContent): PubBlock[] {
       case "hours": if (validTimeZone(b.timezone) && b.days.some((d) => !d.closed && TIME.test(d.open) && TIME.test(d.close) && d.open !== d.close)) out.push({ id: b.id, type: "hours", timezone: b.timezone, days: b.days.map((d) => (d.closed || !TIME.test(d.open) || !TIME.test(d.close) || d.open === d.close ? { closed: true, open: "", close: "" } : d)), note: b.note }); break;
       case "location": if (b.address && !CONTROL.test(b.address + b.note)) out.push({ id: b.id, type: "location", address: b.address, note: b.note, mapHref: mapHref(b.address) }); break;
       case "button": { const u = websiteUrl(b.url); if (u && b.label && !CONTROL.test(b.label)) out.push({ id: b.id, type: "button", label: b.label, href: u }); break; }
+      case "file": {
+        const link = b.fileId ? null : httpsLink(b.url);
+        const hosted = !!b.fileId && !!b.meta;
+        if ((hosted || link) && !CONTROL.test(b.heading + b.label + b.description))
+          out.push({ id: b.id, type: "file", heading: b.heading, label: b.label || "Download", description: b.description, fileId: hosted ? b.fileId : null, href: link, host: link ? hostOf(link) : null, meta: hosted ? b.meta : null });
+        break;
+      }
+      case "documents": {
+        const items = b.items.flatMap((i): PubDoc[] => {
+          if (!i.title || CONTROL.test(i.title + i.description)) return [];
+          const link = i.fileId ? null : httpsLink(i.url);
+          const hosted = !!i.fileId && !!i.meta;
+          return hosted || link ? [{ id: i.id, title: i.title, description: i.description, fileId: hosted ? i.fileId : null, href: link, host: link ? hostOf(link) : null, meta: hosted ? i.meta : null }] : [];
+        });
+        if (items.length) out.push({ id: b.id, type: "documents", heading: b.heading, items });
+        break;
+      }
+      case "gallery": {
+        const items = b.items.flatMap((i): PubImage[] => (i.imageId && i.meta && i.alt && !CONTROL.test(i.alt + i.caption) ? [{ id: i.id, imageId: i.imageId, caption: i.caption, alt: i.alt, w: i.meta.w, h: i.meta.h }] : []));
+        if (items.length) out.push({ id: b.id, type: "gallery", heading: b.heading, items });
+        break;
+      }
+      case "entries": {
+        const items = b.items.filter((i) => i.title && ![i.title, i.org, i.period, i.summary].some((v) => CONTROL.test(v)));
+        if (items.length) out.push({ id: b.id, type: "entries", heading: b.heading, items });
+        break;
+      }
     }
   }
   return out;
@@ -305,22 +456,63 @@ export function readPageSnapshot(raw: unknown): PageSnapshot | null {
       case "hours": return Array.isArray(b.days) && b.days.length === 7 && typeof b.timezone === "string" ? [b] : [];
       case "location": return typeof b.mapHref === "string" && typeof b.address === "string" ? [b] : [];
       case "button": return typeof b.href === "string" && typeof b.label === "string" ? [b] : [];
-      case "header": case "text": return [b];
+      case "header": return [{ ...b, coverId: typeof b.coverId === "string" ? b.coverId : null }];
+      case "text": return [b];
+      case "file": return typeof b.label === "string" && (typeof b.href === "string" || typeof b.fileId === "string") ? [{ ...b, heading: str0(b.heading), description: str0(b.description), meta: b.meta ?? null, fileId: b.fileId ?? null, href: b.href ?? null, host: b.host ?? null }] : [];
+      case "documents": return [{ ...b, items: arr(b.items).filter((i): i is PubDoc => { const x = obj(i); return !!x && typeof x.title === "string" && (typeof x.href === "string" || typeof x.fileId === "string"); }).map((i) => ({ ...i, description: str0(i.description), meta: i.meta ?? null, fileId: i.fileId ?? null, href: i.href ?? null, host: i.host ?? null })) }];
+      case "gallery": return [{ ...b, items: arr(b.items).filter((i): i is PubImage => { const x = obj(i); return !!x && typeof x.imageId === "string" && typeof x.alt === "string" && typeof x.w === "number" && typeof x.h === "number"; }).map((i) => ({ ...i, caption: str0(i.caption) })) }];
+      case "entries": return [{ ...b, items: arr(b.items).filter((i): i is EntryItem => { const x = obj(i); return !!x && typeof x.title === "string"; }).map((i) => ({ ...i, org: str0(i.org), period: str0(i.period), summary: str0(i.summary) })) }];
       default: return [];
     }
   });
   return { v: 2, kind: o.kind, accent: ACCENTS.some((a) => a.id === o.accent) ? (o.accent as AccentId) : "forest", blocks: safe };
 }
 
-/** Media ids the draft references, with the kind each must have. */
-export function contentMedia(c: PageContent): { id: string; kind: "portrait" | "logo" | "image" | "file" }[] {
-  const h = c.blocks[0];
-  return h?.type === "header" ? [...(h.portraitId ? [{ id: h.portraitId, kind: "portrait" as const }] : []), ...(h.logoId ? [{ id: h.logoId, kind: "logo" as const }] : [])] : [];
+export type MediaRef = { id: string; kind: "portrait" | "logo" | "image" | "file" };
+/** Every stored file the draft references, with the kind each slot requires. */
+export function contentMedia(c: PageContent): MediaRef[] {
+  const out: MediaRef[] = [];
+  for (const b of c.blocks) {
+    if (b.type === "header") { if (b.portraitId) out.push({ id: b.portraitId, kind: "portrait" }); if (b.logoId) out.push({ id: b.logoId, kind: "logo" }); if (b.coverId) out.push({ id: b.coverId, kind: "image" }); }
+    else if (b.type === "file") { if (b.fileId) out.push({ id: b.fileId, kind: "file" }); }
+    else if (b.type === "documents") { for (const i of b.items) if (i.fileId) out.push({ id: i.fileId, kind: "file" }); }
+    else if (b.type === "gallery") { for (const i of b.items) if (i.imageId) out.push({ id: i.imageId, kind: "image" }); }
+  }
+  return out;
 }
 /** Same, from a stored snapshot. */
 export function snapshotMediaIds(s: PageSnapshot): string[] {
-  const h = s.blocks.find((b) => b.type === "header");
-  return h?.type === "header" ? [h.portraitId, h.logoId].filter((x): x is string => !!x) : [];
+  const out: string[] = [];
+  for (const b of s.blocks) {
+    if (b.type === "header") out.push(...[b.portraitId, b.logoId, b.coverId].filter((x): x is string => !!x));
+    else if (b.type === "file") { if (b.fileId) out.push(b.fileId); }
+    else if (b.type === "documents") { for (const i of b.items) if (i.fileId) out.push(i.fileId); }
+    else if (b.type === "gallery") out.push(...b.items.map((i) => i.imageId));
+  }
+  return out;
+}
+export type StoredFile = { kind: string; bytes: number; mime: string; width: number | null; height: number | null; name: string | null; pages: number | null };
+/** Set every file's facts from its stored record (the browser's copy is never trusted). Unknown ids lose their facts. */
+export function withStoredFacts(c: PageContent, by: Map<string, StoredFile>): PageContent {
+  const fm = (id: string | null): FileMeta | null => { const f = id ? by.get(id) : null; return f && f.kind === "file" ? { name: f.name ?? "document.pdf", bytes: f.bytes, pages: f.pages, mime: f.mime } : null; };
+  const im = (id: string | null): ImgMeta | null => { const f = id ? by.get(id) : null; return f && f.kind === "image" && f.width && f.height ? { w: f.width, h: f.height } : null; };
+  return { ...c, blocks: c.blocks.map((b): Block => {
+    if (b.type === "file") return { ...b, meta: fm(b.fileId) };
+    if (b.type === "documents") return { ...b, items: b.items.map((i) => ({ ...i, meta: fm(i.fileId) })) };
+    if (b.type === "gallery") return { ...b, items: b.items.map((i) => ({ ...i, meta: im(i.imageId) })) };
+    return b;
+  }) };
+}
+/** Drop references to files that no longer exist (restoring an old version). */
+export function withoutMissingMedia(c: PageContent, have: Set<string>): PageContent {
+  const k = (id: string | null) => (id && have.has(id) ? id : null);
+  return { ...c, blocks: c.blocks.map((b): Block => {
+    if (b.type === "header") return { ...b, portraitId: k(b.portraitId), logoId: k(b.logoId), coverId: k(b.coverId) };
+    if (b.type === "file") return { ...b, fileId: k(b.fileId), meta: k(b.fileId) ? b.meta : null };
+    if (b.type === "documents") return { ...b, items: b.items.map((i) => ({ ...i, fileId: k(i.fileId), meta: k(i.fileId) ? i.meta : null })) };
+    if (b.type === "gallery") return { ...b, items: b.items.filter((i) => k(i.imageId)) };
+    return b;
+  }) };
 }
 
 /** Organisation contact file (vCard 3.0 data) for business pages. Public details only; never a photo. */
