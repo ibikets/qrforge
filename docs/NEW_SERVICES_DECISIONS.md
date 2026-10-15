@@ -198,3 +198,13 @@ Evidence. Local: `tests/pages-phase5.ts` (~90 checks), `tests/e2e/phase5.mjs` (b
 ### Full commerce is a separate extension (not built)
 
 Cart, checkout, merchant payments, inventory, orders, shipping and tax need their own design and decisions: a merchant payment provider and settlement model separate from Qrenuvi's own Paystack subscription flow (customers' money must never pass through Qrenuvi's subscription account without a deliberate decision), order and stock tables with concurrency control, refunds/disputes handling, delivery options, tax rules, customer notifications, merchant terms and compliance. Treat it as its own project once there is a cost and provider decision.
+
+## Phase 6, release 1: dynamic links (editable destination, app-download and day/time routing, engagement counts)
+
+- **What**: `/l/<8 characters>` is a permanent address (and QR code) whose destination the owner can change after printing. Optional iPhone/iPad and Android addresses (app-download links) and up to 8 day-and-time rules (own time zone, optional device). Precedence: first matching rule, then the phone's own address, then the main destination.
+- **Proposed limits (Owner can change the rows, no deploy needed)**: Free 0, Pro 25, Business 250 (`plan_limits.max_links`, enforced by a trigger, error QF020). Prices and all other limits are unchanged. Existing static QR codes are untouched.
+- **Lifecycle**: 302 (never cached). Paused shows a notice. Deleted/disabled-by-staff answer 410; addresses are never reused. After the plan ends the link keeps working for the same 7 days (`GRACE_DAYS`), then answers 410. Editing needs a paid plan; pausing and deleting never do.
+- **Safety**: only http(s); no credentials in the address; no IP, localhost or internal names; no loops into `/l/`. Staff disable is a column (`taken_down_at`) honoured by the redirect; a staff screen for it is still to do.
+- **Engagement reporting, labelled accurately**: one counter row per link, day (UTC), device, destination type and robot flag. An "open" is a request to the address, not a person, a unique visitor or proof of a QR scan; previews/robots are counted apart; HEAD requests are not counted. No IP, cookie or user-agent is stored.
+- **Evidence**: engine-level migration test (`tests/db/links.test.mjs`, 28 checks incl. quota race, lost-update-free counting, deny-by-default, rollback), logic tests (`tests/links.ts`), browser suite against stand-ins (`tests/e2e/links.mjs`). Not done: real-device scan, real Supabase.
+- **Apply**: migration `20261019000000_dynamic_links.sql` (paste the file). The app shows "not available yet" until it is applied.

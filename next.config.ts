@@ -56,6 +56,8 @@ const nextConfig: NextConfig = {
       },
       // account data and file downloads must never be stored by shared caches
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      // Dynamic links never pass the page they were opened from on to the destination.
+      { source: "/l/:slug", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       // Brand artwork and icons are not content-hashed, so cache for a day and revalidate in the background.
       ...["/icons/:path*", "/brand/:path*"].map((source) => ({
         source,

@@ -14,6 +14,7 @@ const authed: Item[] = [
   { href: "/create", label: "Create" },
   { href: "/codes", label: "My codes" },
   { href: "/workspace/pages", label: "Pages" },
+  { href: "/workspace/links", label: "Links" },
   { href: "/billing", label: "Billing" },
   { href: "/account", label: "Account" },
 ];

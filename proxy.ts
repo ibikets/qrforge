@@ -13,6 +13,8 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/create";
     return NextResponse.redirect(url, 308);
   }
+  // Dynamic links are public, anonymous and hot: no session lookup, no cookies.
+  if (pathname.startsWith("/l/")) return NextResponse.next();
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return NextResponse.next();
   if (isStaffPath(pathname)) return staffProxy(request);
 

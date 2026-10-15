@@ -15,4 +15,10 @@ for (const [id, p] of Object.entries(PLANS)) {
   const want = [p.maxPages, p.maxMediaBytes].join(","), got = m ? `${m[1]},${m[2]}` : "missing";
   if (want !== got) { bad++; console.log("FAIL pages", id, { want, got }); } else console.log("PASS pages", id, want);
 }
+const dl = fs.readFileSync(new URL("../supabase/migrations/20261019000000_dynamic_links.sql", import.meta.url), "utf8");
+for (const [id, p] of Object.entries(PLANS)) {
+  const m = new RegExp(`set max_links = (\\d+) where plan = '${id}'`).exec(dl);
+  const got = m ? m[1] : "missing";
+  if (String(p.maxLinks) !== got) { bad++; console.log("FAIL links", id, { want: p.maxLinks, got }); } else console.log("PASS links", id, got);
+}
 process.exit(bad ? 1 : 0);

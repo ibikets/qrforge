@@ -153,7 +153,7 @@ http.createServer(async (req, res) => {
   // RLS stand-in: everything belongs to the single test user
   if (req.method === "GET" || req.method === "HEAD") return send(filterRows(T(), u.searchParams));
   if (req.method === "POST") {
-    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" }, pages: { lifecycle: "draft", draft_version: 1, published_version: null, taken_down_at: null, published_at: null, deleted_at: null } }; // column defaults the real database applies
+    const b = await body(req); const DEFAULTS = { content_assets: { state: "active" }, links: { state: "active", version: 1, taken_down_at: null, deleted_at: null, rules: {} }, pages: { lifecycle: "draft", draft_version: 1, published_version: null, taken_down_at: null, published_at: null, deleted_at: null } }; // column defaults the real database applies
     const rows = (Array.isArray(b) ? b : [b]).map((r) => ({ ...(DEFAULTS[table] ?? {}), id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
     if (generic) { state.log.push({ op: "insert", table, rows }); }
     if (table === "payments" && rows.some((r) => state.payments.some((p) => p.reference === r.reference))) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
@@ -164,6 +164,14 @@ http.createServer(async (req, res) => {
         const sub = state.subscriptions.find((x) => x.user_id === r.user_id && new Date(x.current_period_end) > new Date());
         const max = sub?.plan === "business" ? 25 : sub ? 5 : 0;
         if (state.tables.pages.filter((x) => x.user_id === r.user_id && x.lifecycle !== "deleted").length >= max) return json(res, 400, { code: "QF010", message: "hosted page limit reached" });
+      }
+    }
+    if (table === "links") {
+      for (const r of rows) {
+        if (state.tables.links.some((x) => x.slug === r.slug)) return json(res, 409, { code: "23505", message: "duplicate key value violates unique constraint" });
+        const sub = state.subscriptions.find((x) => x.user_id === r.user_id && new Date(x.current_period_end) > new Date());
+        const max = sub?.plan === "business" ? 250 : sub ? 25 : 0;
+        if (state.tables.links.filter((x) => x.user_id === r.user_id && !x.deleted_at).length >= max) return json(res, 400, { code: "QF020", message: "dynamic link limit reached" });
       }
     }
     if (table === "qr_codes" && state.dbLimit != null && state.qr_codes.length >= state.dbLimit) return json(res, 400, { code: "QF001", message: "saved-code limit reached for plan free" });
