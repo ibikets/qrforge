@@ -184,4 +184,19 @@ http.createServer(async (req, res) => {
   if (v) { const tx = state.paystack[decodeURIComponent(v[1])]; if (!tx) return json(res, 404, { status: false, message: "Transaction reference not found" }); if (tx.__fail) return json(res, 500, { status: false }); return json(res, 200, { status: true, data: tx }); }
   json(res, 404, {});
 }).listen(54322);
+// Resend stand-in (NOT the real service): records each send; state.emailMode = "ok" | "403" | "429" | "500" makes it fail.
+http.createServer(async (req, res) => {
+  const u = new URL(req.url, "http://x");
+  if (u.pathname === "/domains") return json(res, 200, { data: [{ name: "bitzpark.com", status: state.emailMode === "unverified" ? "pending" : "verified" }] });
+  if (u.pathname === "/emails" && req.method === "POST") {
+    const b = await body(req);
+    state.log.push({ op: "email", key: req.headers["idempotency-key"], auth: (req.headers.authorization ?? "").slice(0, 7), to: b?.to, subject: b?.subject, text: b?.text, reply_to: b?.reply_to });
+    const m = state.emailMode ?? "ok";
+    if (m === "403") return json(res, 403, { message: "The bitzpark.com domain is not verified." });
+    if (m === "429") return json(res, 429, { message: "rate limit" });
+    if (m === "500") return json(res, 500, { message: "boom" });
+    return json(res, 200, { id: "msg_" + crypto.randomUUID().slice(0, 8) });
+  }
+  json(res, 404, {});
+}).listen(54323);
 console.log("mock up");

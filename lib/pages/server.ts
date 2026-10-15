@@ -8,7 +8,8 @@ import { forbidden, rateLimit, sameOrigin } from "@/lib/request-guards";
 import { getSession, supabaseConfigured } from "@/lib/supabase";
 
 export const PAGE_BUCKET = "page-media";
-export const GRACE_DAYS = 7;
+import { GRACE_DAYS } from "@/lib/pages/policy";
+export { GRACE_DAYS };
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const PUBLIC_ID = /^[a-z2-9]{10}$/;
 export const pageTag = (publicId: string) => `page:${publicId}`;
@@ -39,7 +40,7 @@ export async function customer(req: Request, name: string, limit = 60, opts: { n
   const limited = rateLimit(req, name, limit, 60_000, s.userId);
   if (limited) return { response: limited };
   if (opts.needsPlan && PLANS[s.plan].maxPages === 0)
-    return { response: jerr(403, "Your plan does not include hosted pages. Choose Pro or Business to create and edit them. Anything you published stays visible during the grace period.", { code: "plan" }) };
+    return { response: jerr(403, "Your plan does not include hosted pages. Choose Pro or Business to create and edit them. Anything you published stays visible for "+GRACE_DAYS+" days after your plan ends.", { code: "plan" }) };
   return { userId: s.userId, plan: s.plan as PlanId };
 }
 

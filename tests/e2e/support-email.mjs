@@ -1,0 +1,35 @@
+// Staff support replies by email against the BUILT app + stand-ins (a Resend stand-in on :54323; NOT the real email service).
+// Needs the app started with RESEND_API_KEY=test EMAIL_SEND_ENABLED=true RESEND_API_URL=http://localhost:54323.
+import { BASE, ctl, staffSession } from "./lib.mjs";
+import { IDS, seed, ID } from "./seed-admin.mjs";
+let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
+await ctl({ reset: true }); await seed();
+const as = async (id, email) => await staffSession(id, email);
+const call = async (cookie, body, origin = BASE) => { const r = await fetch(BASE + "/api/admin/support", { method: "POST", headers: { "content-type": "application/json", cookie, origin }, body: JSON.stringify(body) }); return { s: r.status, j: await r.json().catch(() => ({})) }; };
+const logs = async () => (await ctl()).log.filter((l) => l.op === "email");
+const sup = await as(IDS.support, "support@example.com");
+const base = { action: "send_reply", ticket: IDS.ticket, message: ID(74), to: "tester@example.com" };
+ok((await call(await as(IDS.billing, "billing@example.com"), base)).s === 403, "billing role cannot send support replies");
+ok((await call(sup, base, "https://evil.example")).s === 403, "cross-site request refused");
+ok((await call(sup, { ...base, to: "someone.else@example.com" })).s === 422 && (await logs()).length === 0, "a recipient that is not the ticket's customer is refused and nothing is sent");
+ok((await call(sup, { ...base, ticket: ID(71), message: ID(74) })).s >= 400 && (await logs()).length === 0, "a draft that belongs to another ticket is refused");
+ok((await call(sup, { ...base, message: ID(73) })).s === 409 && (await logs()).length === 0, "an internal note can never be emailed");
+await ctl({ set: { emailMode: "403" } });
+const f = await call(sup, base);
+ok(f.s === 502 && /not verified/i.test(f.j.error ?? "") && (await logs()).length === 1, `unverified sender: clear failure, one attempt (${f.s})`);
+let page = await (await fetch(BASE + `/admin/support/${IDS.ticket}`, { headers: { cookie: sup } })).text();
+ok(/sending failed/.test(page) && /Retry sending/.test(page), "ticket page shows the failed status and a Retry action");
+await ctl({ set: { emailMode: "ok" } });
+const okr = await call(sup, base);
+const sent = await logs();
+ok(okr.s === 200 && sent.length === 2 && sent[0].key === sent[1].key && sent[1].key === `qrenuvi-reply-${ID(74)}`, "retry succeeds and reuses the same idempotency key");
+ok(sent[1].to?.[0] === "tester@example.com" && sent[1].reply_to === "qrenuvi@bitzpark.com" && sent[1].auth === "Bearer ", "goes to the customer only with the support reply-to");
+ok(!/internal|Checking plan/i.test(sent[1].text ?? ""), "internal notes are not included in the email");
+const again = await call(sup, base);
+ok(again.s === 409 && (await logs()).length === 2, "a sent reply cannot be sent twice");
+page = await (await fetch(BASE + `/admin/support/${IDS.ticket}`, { headers: { cookie: sup } })).text();
+ok(/Reply sent by email to tester@example.com/.test(page), "ticket page shows who it was sent to");
+const audit = (await ctl()).log.filter((l) => l.op === "insert" && l.table === "audit_events").map((l) => l.rows?.[0]?.action);
+ok(audit.includes("ticket.reply_failed") && audit.includes("ticket.reply_sent"), `both outcomes are audited (${audit.join(",")})`);
+ok(!JSON.stringify((await ctl()).log).includes("test_key_not_real"), "the provider key never appears in recorded traffic or audit");
+console.log(bad ? `${bad} FAILED` : "all passed"); process.exit(bad ? 1 : 0);

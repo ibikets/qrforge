@@ -1,3 +1,4 @@
+import { senderDomainStatus } from "@/lib/email";
 import { PAYSTACK_API, paystackHeaders } from "@/lib/paystack";
 
 export type Check = { name: string; state: "verified" | "failed" | "unverified"; detail: string; checkedAt: string | null };
@@ -35,6 +36,8 @@ export async function runChecks(): Promise<Check[]> {
       out.push({ name: "Payment provider", state: "failed", detail: `Could not be reached. Mode: ${mode}.`, checkedAt: now() });
     }
   }
+  const mail = await senderDomainStatus();
+  out.push({ name: "Support email (Resend)", state: mail.state, detail: mail.detail, checkedAt: now() });
   return out;
 }
 
@@ -46,6 +49,7 @@ export function presence() {
     flags: [
       ["Database service key", Boolean(e.SUPABASE_SERVICE_ROLE_KEY)],
       ["Payment key", Boolean(e.PAYSTACK_SECRET_KEY)],
+      ["Email key (support replies)", Boolean(e.RESEND_API_KEY)],
       ["Scheduled-job secret", Boolean(e.CRON_SECRET)],
       ["Site address", Boolean(site)],
       ["Owner sign-up email", Boolean(e.OWNER_BOOTSTRAP_EMAIL)],

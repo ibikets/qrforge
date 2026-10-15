@@ -3,6 +3,7 @@ import { adm } from "@/lib/admin/db";
 import { engineFor } from "@/lib/pages/kinds";
 import { MAX_UPLOAD_BYTES, MediaError, parseCrop, processGalleryImage, processImage } from "@/lib/pages/media";
 import { MAX_PDF_BYTES, PdfError, processPdf } from "@/lib/pages/pdf";
+import { withUploadSlot } from "@/lib/pages/upload-slots";
 import { PAGE_BUCKET, cleanName, customer, jerr, ownedPage } from "@/lib/pages/server";
 
 /**
@@ -39,17 +40,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return Response.json({ id: d.id, kind, reused: true, ...(kind === "file" ? { name: d.original_name, bytes: d.bytes, pages: d.meta?.pages ?? null } : { width: d.width, height: d.height }) }, { status: 200, headers: { "Cache-Control": "no-store" } });
   }
 
-  let main: Buffer, mime: string, width = 0, height = 0, derivative: Buffer | null = null, derivativeExt = "", derivativeMime = "", pages: number | null = null;
-  try {
+  type Done = { main: Buffer; mime: string; width: number; height: number; derivative: Buffer | null; derivativeExt: string; derivativeMime: string; pages: number | null };
+  const slot = await withUploadSlot(c.userId, async (): Promise<Done> => {
+    let width = 0, height = 0, derivative: Buffer | null = null, derivativeExt = "", derivativeMime = "", pages: number | null = null, main: Buffer, mime: string;
     if (kind === "file") { const p = await processPdf(input); main = p.main; mime = "application/pdf"; pages = p.pages; }
     else if (kind === "image") { const o = await processGalleryImage(input); main = o.main; mime = "image/webp"; width = o.width; height = o.height; derivative = o.thumb; derivativeExt = ".thumb.webp"; derivativeMime = "image/webp"; }
     else {
       let crop; try { crop = parseCrop(JSON.parse(String(form.get("crop") ?? "{}"))); } catch { crop = parseCrop({}); }
       const o = await processImage(input, kind, crop); main = o.main; mime = o.mime; width = o.width; height = o.height; derivative = o.vcf; derivativeExt = ".vcf.jpg"; derivativeMime = "image/jpeg";
     }
-  } catch (e) {
-    return jerr(422, e instanceof MediaError || e instanceof PdfError ? e.message : "That file could not be read.", { field: "file" });
-  }
+    return { main, mime, width, height, derivative, derivativeExt, derivativeMime, pages };
+  }).catch((e) => e as Error);
+  if (slot instanceof Error) return jerr(422, slot instanceof MediaError || slot instanceof PdfError ? slot.message : "That file could not be read.", { field: "file" });
+  if (!slot.ok) return jerr(429, "Your other uploads are still being checked. Wait a moment and try again.", { code: "busy" });
+  const { main, mime, width, height, derivative, derivativeExt, derivativeMime, pages } = slot.value;
 
   const mid = randomUUID();
   const base = `${c.userId}/${page.id}/${mid}`;

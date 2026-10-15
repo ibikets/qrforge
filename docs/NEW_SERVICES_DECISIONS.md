@@ -101,7 +101,7 @@ Additional load: image uploads (CPU for `sharp`, up to 5 MB per request), privat
 - **Fix:** (1) one shared `rowProblem()` used by validation *and* the snapshot, so unfinished or unsafe rows are simply left out of the preview/snapshot (the raw text is never rewritten); (2) `websiteUrl()` rewritten with an explicit policy (see code comment: trim, no spaces/control characters, scheme optional → https, only http/https, no credentials, real domain, ≤300 chars, `host:port` accepted) and never throws; (3) `CardView` and `readSnapshot()` tolerate damaged rows; (4) a `PreviewBoundary` so a preview failure can never take the editor down; (5) inline validation shows after the person leaves a field (not while typing) and clears as soon as it is fixed; (6) the server uses the same `validateCard()` (HTTP 422, content kept on screen).
 - **Draft policy (kept):** a draft with an unfinished/unsafe address is refused by the server with the field message; everything stays on screen and nothing else is lost. Publishing needs a finished address.
 - **Evidence:** `tests/pages-url.ts` (policy table, 10 sample strings typed character by character incl. javascript:/data:/credentials/unicode/very long, paste = typed, snapshot, contact file, damaged stored snapshots) and `tests/e2e/url-typing.mjs` (41 browser checks: typing, partial/unsafe values, inline messages, refused save keeps content, several website and social rows, save, reload, publish, signed-out page, contact file, static contact editor). Class: Local + Stand-in (not real Supabase).
-- **Open conflict recorded:** the 2026-10-15 brief says to keep the 30-day grace "provisionally"; the Owner's earlier chat message (2026-10-14 20:16) said **7 days**. The 7-day value is live and is kept until the Owner says otherwise (one constant: `GRACE_DAYS`).
+- **Resolved 2026-10-15 (Owner):** grace is 7 days. Earlier note, now closed: the 2026-10-15 brief says to keep the 30-day grace "provisionally"; the Owner's earlier chat message (2026-10-14 20:16) said **7 days**. The 7-day value is live and is kept until the Owner says otherwise (one constant: `GRACE_DAYS`).
 
 ## 2026-10-15 — Phase 3: business, multi-link and social pages (release 2 of this round)
 - **Model:** one generic *sections* model (`lib/pages/blocks.ts`: header, text, contact buttons, link list, social profiles, opening hours, location, button) behind a per-kind *engine* (`lib/pages/kinds.ts`). The create, save, publish, restore, media and public routes call `engineFor(kind)` and are otherwise kind-agnostic, so Phases 4–5 add engines rather than routes. The original card keeps its own model (v1 snapshots) untouched; sections use v2 snapshots. A damaged or foreign snapshot is never rendered (neutral page).
@@ -160,3 +160,15 @@ Scoped, presentation-only change to published cards and their editor preview (an
 - Save contact is a full-width accent button on published cards. In the editor it is a dashed, grey, non-interactive control with a short note; it is never a link there.
 - Contact rows: tinted icon chip, small label, value; 56px rows; section headings use the accent.
 - Evidence: Playwright at 320/390/1280 (long names, no photo, several numbers/emails, four accents), axe wcag2a/aa/21aa clean at 390, every link and button at least 44x44, keyboard Tab reaches Call, Save contact and social links. Screenshots in `docs/card-look/`. Not done: physical-device viewing and a screen-reader pass.
+
+## Upload protections review (Phase 4 follow-up)
+
+The request limit (90/min per user) is not the only protection. Layers, in order:
+1. Client checks (size/type) for fast feedback only.
+2. Request rate limit per user (90/min).
+3. **Concurrency guard** (`lib/pages/upload-slots.ts`): max 2 files being decoded/re-encoded at once per user and 8 per server instance; extra requests get HTTP 429 "busy" and the editor's retry control. Per instance, because no shared store is paid for.
+4. Hard size caps before processing (PDF/image byte limits, pixel-count limit for images), PDFs rebuilt and images re-encoded, so a decompression bomb is rejected before sharp does full work.
+5. Database quotas (QF011 storage per plan, QF012 files per page, 60 files/page) enforced server-side at insert, plus sha256 dedupe so repeats cost no storage.
+6. Staff "File usage" panel (Pages screen) shows per-customer file counts and bytes by type, no names/paths/contact data.
+
+Not claimed: malware scanning, global (cross-instance) concurrency, per-workspace quotas beyond the plan storage cap.

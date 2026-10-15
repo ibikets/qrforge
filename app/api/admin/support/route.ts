@@ -1,5 +1,7 @@
 import { adm } from "@/lib/admin/db";
+import { writeAudit } from "@/lib/admin/audit";
 import { adminActions, fail } from "@/lib/admin/guard";
+import { emailEnabled, sendEmail } from "@/lib/email";
 import { int, must, oneOf, str, uuid } from "@/lib/admin/validate";
 
 export const POST = adminActions({
@@ -55,8 +57,36 @@ export const POST = adminActions({
   },
   send_reply: {
     cap: "support.manage",
-    async handler() {
-      throw fail(424, "Sending replies is not available yet. It needs a verified sending address and delivery status from an email service.");
+    reason: false,
+    limit: 20,
+    async handler({ staff, body }) {
+      const ticketId = uuid(body, "ticket");
+      const messageId = uuid(body, "message");
+      const to = typeof body.to === "string" ? body.to.trim().toLowerCase() : "";
+      if (!emailEnabled()) throw fail(424, "Email sending is switched off on this deployment. Replies are only sent from the live site.");
+      const db = adm();
+      const t = must(await db.from("support_tickets").select("id,subject,customer_id").eq("id", ticketId).maybeSingle());
+      if (!t) throw fail(404, "Ticket not found.");
+      if (!t.customer_id) throw fail(422, "Link this ticket to a customer before sending a reply.");
+      const cust = await db.auth.admin.getUserById(t.customer_id);
+      const email = cust.data?.user?.email?.toLowerCase();
+      if (!email) throw fail(422, "This customer has no email address on record.");
+      if (to !== email) throw fail(422, "The recipient on screen is out of date. Reload and review it before sending.", "to");
+      const m = must(await db.from("ticket_messages").select("id,ticket_id,kind,body,delivery,attempts").eq("id", messageId).eq("ticket_id", ticketId).maybeSingle());
+      if (!m || m.kind !== "reply_draft") throw fail(409, m?.kind === "reply_sent" ? "This reply was already sent." : "Only a reply draft can be sent.");
+      // Claim: one sender wins (compare-and-set on the attempt counter). A crash after claiming is safe to retry: the provider de-duplicates on the same key.
+      const claimed = must(await db.from("ticket_messages").update({ delivery: "queued", to_email: email, sent_by: staff.userId, attempts: (m.attempts ?? 0) + 1, delivery_error: null })
+        .eq("id", messageId).eq("kind", "reply_draft").eq("attempts", m.attempts ?? 0).select("id"));
+      if (!claimed || (Array.isArray(claimed) && claimed.length === 0)) throw fail(409, "Someone else is sending this reply right now. Reload to see its status.");
+      const r = await sendEmail({ to: email, subject: `Re: ${t.subject}`.slice(0, 160), text: `${m.body}\n\n--\nQrenuvi Support\nReply to this email to reach us.`, idempotencyKey: `qrenuvi-reply-${messageId}` });
+      if (r.ok) {
+        must(await db.from("ticket_messages").update({ kind: "reply_sent", delivery: "sent", provider_id: r.id, sent_at: new Date().toISOString() }).eq("id", messageId).select("id"));
+        return { data: { delivery: "sent" }, audit: { action: "ticket.reply_sent", targetType: "ticket", targetId: ticketId, after: { message: messageId, to: email } } };
+      }
+      await db.from("ticket_messages").update({ delivery: "failed", delivery_error: r.code }).eq("id", messageId);
+      await writeAudit(staff, { reason: null, action: "ticket.reply_failed", targetType: "ticket", targetId: ticketId, after: { message: messageId, code: r.code } });
+      const msg = { sender_not_verified: "The sending address is not verified with the email service yet, so nothing was sent.", rate_limited: "The email service is busy. Nothing was sent; try again shortly.", unreachable: "The email service could not be reached. Nothing was confirmed; check the status before retrying.", rejected: "The email service refused this message. Nothing was sent.", invalid: "The recipient or subject is not valid.", disabled: "Email sending is off." }[r.code];
+      throw fail(r.code === "invalid" ? 422 : 502, msg);
     },
   },
 });

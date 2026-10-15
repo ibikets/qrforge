@@ -1,4 +1,5 @@
 "use client";
+import { GRACE_DAYS } from "@/lib/pages/policy";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import CardView from "@/components/pages/CardView";
@@ -140,7 +141,7 @@ export default function CardEditor(p: Props) {
           {pubVer ? ` · live version ${pubVer}` : ""}{dirty ? " · unsaved changes" : ""}
         </p>
         {p.takenDown ? <Notice tone="error" title="This page has been disabled by Qrenuvi" live>It cannot be published. Contact support if you think this is a mistake.</Notice> : null}
-        {!p.canEdit && !p.takenDown ? <Notice tone="warning" title="Editing needs an active Pro or Business plan" live>Your card is kept. {live ? "It stays visible for a grace period after your plan ends. " : ""}You can still unpublish or delete it. <a className="text-brand" href="/pricing">See plans</a></Notice> : null}
+        {!p.canEdit && !p.takenDown ? <Notice tone="warning" title="Editing needs an active Pro or Business plan" live>Your card is kept. {live ? "It stays visible for {GRACE_DAYS} days after your plan ends. " : ""}You can still unpublish or delete it. <a className="text-brand" href="/pricing">See plans</a></Notice> : null}
         {conflict ? (
           <div role="alertdialog" aria-labelledby="cf-t" className="my-6 rounded-control border border-danger bg-surface p-4">
             <h2 id="cf-t" className="mb-1 text-lg font-medium">This card was changed somewhere else</h2>

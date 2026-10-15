@@ -48,11 +48,16 @@ export async function seed(extra = {}) {
     ticket_messages: [
       { id: ID(72), ticket_id: IDS.ticket, kind: "customer", body: "The SVG button does nothing on my phone.", created_at: day(-2) },
       { id: ID(73), ticket_id: IDS.ticket, kind: "internal_note", body: "Checking plan; looks like Free.", created_at: day(-1) },
-      { id: ID(74), ticket_id: IDS.ticket, kind: "reply_draft", body: "Hello, SVG downloads are part of paid plans.", created_at: day(-1) },
+      { id: ID(74), ticket_id: IDS.ticket, kind: "reply_draft", body: "Hello, SVG downloads are part of paid plans.", attempts: 0, delivery: null, created_at: day(-1) },
     ],
     audit_events: [
       { id: 12, at: day(-1), actor_id: IDS.owner, actor_email: "owner@example.com", actor_role: "owner", action: "plan.publish", target_type: "plan_version", target_id: ID(50), reason: "Initial prices", before_state: { state: "draft" }, after_state: { state: "published", api_key: "[redacted]" }, correlation_id: "c-12" },
       { id: 11, at: day(-2), actor_id: IDS.support, actor_email: "support@example.com", actor_role: "support", action: "customer.note", target_type: "customer", target_id: IDS.cust, reason: null, before_state: null, after_state: { note: "added" }, correlation_id: "c-11" },
+    ],
+    page_media: [
+      { id: ID(90), page_id: ID(91), user_id: IDS.cust, kind: "file", path: "secret/path/one.pdf", mime: "application/pdf", bytes: 2_500_000, original_name: "private-contract.pdf" },
+      { id: ID(92), page_id: ID(91), user_id: IDS.cust, kind: "image", path: "secret/path/two.webp", mime: "image/webp", bytes: 300_000, original_name: null },
+      { id: ID(93), page_id: ID(94), user_id: IDS.cust2, kind: "image", path: "secret/path/three.webp", mime: "image/webp", bytes: 100_000, original_name: null },
     ],
     content_drafts: [],
     content_revisions: [],
