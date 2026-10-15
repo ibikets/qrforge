@@ -5,6 +5,7 @@ export const ADMIN_NAV: AdminNavItem[] = [
   { href: "/admin", label: "Overview", any: ["overview.view"] },
   { href: "/admin/customers", label: "Customers", any: ["customers.read", "customers.read_minimal"] },
   { href: "/admin/pages", label: "Pages", any: ["pages.read"] },
+  { href: "/admin/links", label: "Links", any: ["pages.read"] },
   { href: "/admin/content", label: "Content", any: ["content.draft"] },
   { href: "/admin/plans", label: "Plans", any: ["plans.draft", "plans.publish", "entitlement.adjust"] },
   { href: "/admin/discounts", label: "Discounts", any: ["campaigns.draft", "campaigns.publish"] },

@@ -1,6 +1,6 @@
 // Dynamic links in a real browser against the built app + local stand-ins (NOT real Supabase): create, edit, route, pause, delete, stats, limits, safety.
 import fs from "node:fs";
-import { open, ctl, BASE, SP, sub, UID } from "./lib.mjs";
+import { open, ctl, BASE, SP, sub, UID, staffSession } from "./lib.mjs";
 let bad = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
 const OUT = `${SP}/links`; fs.mkdirSync(OUT, { recursive: true });
 const axe = fs.readFileSync(process.env.AXE_PATH, "utf8");
@@ -110,6 +110,11 @@ ok(r.status === 200 && /svg/.test(r.headers.get("content-type")) && (await r.tex
 r = await fetch(`${BASE}/api/links/${id}/qr?format=png`, { headers: { cookie: cookieHdr } });
 const png = Buffer.from(await r.arrayBuffer()); ok(r.status === 200 && png.slice(1, 4).toString() === "PNG", "PNG QR code downloads");
 
+// ---- reporting failure must never stop a valid redirect
+await ctl({ rpc: { record_link_open: { __status: 500, __body: { code: "XX000", message: "counter down" } } } });
+r = await hit(slug, UA.desk); ok(r.status === 302 && r.headers.get("location") === "https://example.org/summer", "if the counter fails, the visitor is still redirected");
+await ctl({ rpc: { record_link_open: null } });
+
 // ---- pause / resume
 await page.reload({ waitUntil: "domcontentloaded" }); await L("Main destination").waitFor();
 await page.getByRole("button", { name: "Pause link" }).click(); await page.getByText(/^Paused\./).waitFor();
@@ -153,12 +158,35 @@ r = await api("/api/links", "POST", { name: "Again", destination: "example.org/a
 ok(r.status === 200 && (await links()).find((x) => x.id === again.id).slug !== slug, "a new link never reuses a deleted address");
 
 // ---- takedown, grace and lapse
+const live0 = (await links()).find((x) => x.id === again.id);
 const setLive = async (patch) => { const all = await links(); Object.assign(all.find((x) => x.id === again.id), patch); await ctl({ tables: { links: all } }); return all.find((x) => x.id === again.id); };
-let live = await setLive({ taken_down_at: new Date().toISOString() });
+const SID = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, "0")}`;
+await ctl({ tables: { staff_members: [
+  { user_id: SID(1), email: "owner@example.com", role: "owner", extra_grants: [], state: "active", version: 1 },
+  { user_id: SID(2), email: "support@example.com", role: "support", extra_grants: [], state: "active", version: 1 },
+  { user_id: SID(4), email: "editor@example.com", role: "content_editor", extra_grants: [], state: "active", version: 1 },
+] } });
+const support = await staffSession(SID(2), "support@example.com"); const editor = await staffSession(SID(4), "editor@example.com");
+const staffCall = async (cookie, action, reason = "Abuse report #4821", origin = BASE) => (await fetch(`${BASE}/api/admin/links`, { method: "POST", headers: { "content-type": "application/json", cookie, origin }, body: JSON.stringify({ action, link_id: again.id, reason }) })).status;
+ok((await staffCall(editor, "takedown")) === 403, "staff: a Content Editor cannot disable a link");
+ok((await staffCall(await staffSession(SID(2), "support@example.com", { lastSignIn: Date.now() - 20 * 60e3 }), "takedown")) === 403, "staff: disabling needs a recent sign-in (step-up)");
+ok((await staffCall(support, "takedown", "x")) === 422, "staff: disabling needs a real reason");
+ok((await staffCall(support, "takedown", "Abuse report #4821", "https://evil.example")) === 403, "staff: cross-site request refused");
+ok((await staffCall(support, "restore")) === 409, "staff: restoring a link that is not disabled is refused");
+const lpg = await (await fetch(`${BASE}/admin/links`, { headers: { cookie: support } })).text();
+ok(lpg.includes(live0.slug) && /Disable/.test(lpg) && !/Again/.test(lpg), "staff list shows the address and destination but not the customer's name for the link");
+ok(!/Disable/.test(await (await fetch(`${BASE}/admin/links`, { headers: { cookie: editor } })).text()), "staff: a Content Editor sees no links screen actions");
+ok((await staffCall(support, "takedown")) === 200, "staff: Support disables a link");
+ok((await staffCall(support, "takedown")) === 409, "staff: disabling twice is refused");
+let live = (await links()).find((x) => x.id === again.id);
 r = await hit(live.slug, UA.desk); ok(r.status === 410, "a link disabled by staff answers 410");
 r = await api(`/api/links/${live.id}`, "PATCH", { state: "paused", version: live.version }); ok(r.status === 403, "the owner cannot re-enable or change a disabled link");
 await page.goto(`${BASE}/workspace/links/${live.id}`, { waitUntil: "domcontentloaded" }); await page.getByText(/Qrenuvi disabled this link/).waitFor(); ok(true, "the editor tells the owner it was disabled");
-live = await setLive({ taken_down_at: null });
+ok((await staffCall(support, "restore")) === 200, "staff: Support re-enables the link");
+live = (await links()).find((x) => x.id === again.id);
+ok((await hit(live.slug, UA.desk)).status === 302, "a re-enabled link redirects again");
+const audits = ((await ctl()).tables.audit_events ?? []).filter((a) => a.action?.startsWith("link."));
+ok(audits.length === 2 && audits.every((a) => a.target_type === "link" && a.actor_role === "support" && a.reason === "Abuse report #4821") && !JSON.stringify(audits).includes("Again"), "both staff actions audited with actor, role and reason, and no link name");
 await ctl({ set: { subscriptions: [sub("business", -3)] } });
 ok((await hit(live.slug, UA.desk)).status === 302, "3 days after the plan ends the link still works (7-day grace)");
 await ctl({ set: { subscriptions: [sub("business", -9)] } });

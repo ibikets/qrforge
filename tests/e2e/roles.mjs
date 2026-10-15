@@ -13,6 +13,7 @@ const A = {
   jobs: { preview: "rel", run: "rel", promote: "rel", rollback: "rel" },
   settings: { set: "set", clear: "set" },
   pages: { takedown: "pt", restore: "pt" },
+  links: { takedown: "pt", restore: "pt" },
   support: { create_ticket: "sup", add_message: "sup", update: "sup", send_reply: "sup" },
 };
 const CAPSET = {
